@@ -1,0 +1,68 @@
+# ============================================================
+#  Git 忽略规则 · 岗位闯关式实训平台（学生端）
+#  说明：以下都是可再生成的产物或本地个性化文件，
+#        不需要提交到仓库。
+# ============================================================
+
+# ---------- 依赖 ----------
+node_modules/
+
+# ---------- 构建产物 ----------
+dist/
+dist-ssr/
+*.local
+
+# ---------- 日志 ----------
+# 若启动 dev server 时用 `> xxx.log` 重定向输出，根目录会出现日志文件；
+# 建议直接不要重定向，下面的规则用于兜底。
+logs/
+*.log
+.dev-server.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---------- 本地验证产物（截图、临时脚本、浏览器临时配置） ----------
+.shots/
+.chromeqa*/
+.*profile/
+_tmp*/
+
+# ---------- 测试与覆盖率 ----------
+coverage/
+__screenshots__/
+/cypress/videos/
+/cypress/screenshots/
+
+# ---------- 编辑器与 IDE ----------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+
+# ---------- TypeScript 与缓存 ----------
+*.tsbuildinfo
+.eslintcache
+
+# ---------- 环境变量 ----------
+.env
+.env.local
+.env.*.local
+
+# ---------- Vite ----------
+*.timestamp-*-*.mjs
+
+# ---------- 本地 AI / 工具配置（不随仓库发布） ----------
+# 本机使用 Codex 等工具时生成的技能、配置目录，与项目本身无关。
+.agents/
+.codex/

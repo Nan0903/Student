@@ -1,0 +1,258 @@
+/* ==========================================================================
+   全局基础样式：重置、排版、通用卡片与标签
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink-1);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+::selection {
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+/* —— 滚动条：内容区轻量处理 —— */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c8d6e8 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #c8d6e8;
+  border-radius: var(--r-pill);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   排版工具：数字一律用等宽数字字面，避免指标跳动
+   -------------------------------------------------------------------------- */
+
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.01em;
+}
+
+/* 中文小标签：字距略放开，作为结构性眉标使用 */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------------------
+   通用面块
+   -------------------------------------------------------------------------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+}
+
+.panel--flush {
+  border-radius: var(--r-lg);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.panel-head__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.panel-title-mark {
+  width: 4px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-500));
+}
+
+.panel-body {
+  padding: 22px;
+}
+
+/* --------------------------------------------------------------------------
+   状态药丸：可挑战 / 进行中 / 已完成 / 未解锁
+   -------------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.pill--todo {
+  color: var(--brand-600);
+  background: var(--todo-bg);
+  border-color: var(--todo-line);
+}
+
+.pill--wip {
+  color: #b35c00;
+  background: var(--wip-bg);
+  border-color: var(--wip-line);
+}
+
+.pill--done {
+  color: #2f8a08;
+  background: var(--ok-bg);
+  border-color: var(--ok-line);
+}
+
+.pill--lock {
+  color: var(--ink-3);
+  background: var(--lock-bg);
+  border-color: var(--lock-line);
+}
+
+/* --------------------------------------------------------------------------
+   骨架屏：加载态不使用整页遮罩
+   -------------------------------------------------------------------------- */
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #eef3fa;
+  border-radius: var(--r-sm);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   过渡：卡片入场，短促、有节奏，不做散点动效
+   -------------------------------------------------------------------------- */
+
+.rise-enter-active {
+  transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 0.68, 0.35, 1);
+}
+
+.rise-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* —— Element Plus 细节对齐 —— */
+.el-button {
+  font-weight: 600;
+}
+
+.el-progress-bar__outer {
+  background-color: #eaf0f8;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-1);
+  font-weight: 700;
+}
+
+.el-drawer__body {
+  padding: 22px 24px;
+}

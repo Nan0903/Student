@@ -1,0 +1,93 @@
+/* ==========================================================================
+   设计令牌 · 岗位闯关式实训平台（学生端）
+   色值、圆角、阴影、字体统一在这里定义，组件不写死具体数值。
+   ========================================================================== */
+
+:root {
+  /* —— 主色（顶栏渐变 / 主按钮 / 导航高亮） —— */
+  --brand-700: #1259bc;
+  --brand-600: #1e7be8;
+  --brand-500: #1677ff;
+  --brand-400: #4a95f7;
+  --brand-300: #9cc6fb;
+  --brand-100: #d6e7ff;
+  --brand-050: #e8f1ff;
+
+  /* —— 状态色：已完成 / 进行中 / 可挑战 / 未解锁 —— */
+  --ok: #52c41a;
+  --ok-bg: #f2fceb;
+  --ok-line: #b7eb8f;
+  --wip: #fa8c16;
+  --wip-bg: #fff6e9;
+  --wip-line: #ffd591;
+  --todo: #1677ff;
+  --todo-bg: #e8f1ff;
+  --todo-line: #a8ccff;
+  --lock: #bfbfbf;
+  --lock-bg: #f5f5f5;
+  --lock-line: #e5e6eb;
+  --gold: #ffc53d;
+  --danger: #f5222d;
+
+  /* —— 面 —— */
+  --bg: #f0f6ff;
+  --surface: #ffffff;
+  --surface-2: #f7faff;
+  --night: #1e1e32;
+  --night-2: #262642;
+  --night-3: #33335a;
+  --line: #e5e9f0;
+  --line-soft: #eef2f8;
+
+  /* —— 字 —— */
+  --ink-1: #1f2329;
+  --ink-2: #646a73;
+  --ink-3: #8f959e;
+  --ink-inv: #ffffff;
+  --ink-inv-2: rgba(255, 255, 255, 0.72);
+
+  /* —— 圆角 / 阴影 —— */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+  --sh-1: 0 1px 2px rgba(31, 35, 41, 0.05), 0 2px 8px rgba(31, 35, 41, 0.04);
+  --sh-2: 0 6px 18px rgba(30, 123, 232, 0.1), 0 2px 6px rgba(31, 35, 41, 0.05);
+  --sh-3: 0 18px 44px rgba(18, 60, 120, 0.16);
+  --sh-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* —— 字体 —— */
+  --font-ui: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  /* 数字与指标单独一套字面，读起来像仪表面板 */
+  --font-num: "Bahnschrift", "DIN Alternate", "Oswald", "Segoe UI Variable Display", "Segoe UI",
+    var(--font-ui);
+
+  /* —— 骨架 —— */
+  --shell-max: 100%;
+  /* 左侧主导航栏宽度 */
+  --nav-w: 220px;
+  /* 两侧留白：随视口宽度增长，避免大屏贴边 */
+  --shell-pad: clamp(24px, 1.7vw, 56px);
+  --header-h: 100px;
+  --nav-h: 56px;
+
+  /* —— Element Plus 主题接管 —— */
+  --el-color-primary: #1677ff;
+  --el-color-primary-light-3: #4a95f7;
+  --el-color-primary-light-5: #7fb6f5;
+  --el-color-primary-light-7: #a8ccff;
+  --el-color-primary-light-8: #c7ddff;
+  --el-color-primary-light-9: #e8f1ff;
+  --el-color-primary-dark-2: #1259bc;
+  --el-color-success: #52c41a;
+  --el-color-warning: #fa8c16;
+  --el-color-danger: #f5222d;
+  --el-font-family: var(--font-ui);
+  --el-border-radius-base: 8px;
+  --el-text-color-primary: #1f2329;
+  --el-text-color-regular: #646a73;
+  --el-text-color-secondary: #8f959e;
+}
