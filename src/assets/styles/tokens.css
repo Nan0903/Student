@@ -73,6 +73,8 @@
   --shell-max: 100%;
   /* 左侧主导航栏宽度 */
   --nav-w: 220px;
+  /* 收起后的窄条宽度：刚好放一个收起/展开按钮 */
+  --nav-w-collapsed: 48px;
   /* 两侧留白：随视口宽度增长，避免大屏贴边 */
   --shell-pad: clamp(24px, 1.7vw, 56px);
   --header-h: 100px;

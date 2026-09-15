@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { prefetchRoute } from '@/router'
-import { navItems, platformInfo } from '@/config/nav'
+import { navItems } from '@/config/nav'
 
 const route = useRoute()
 const router = useRouter()
 
 const emit = defineEmits<{ collapse: [] }>()
+
+withDefaults(defineProps<{ collapsed?: boolean }>(), { collapsed: false })
 
 /** 当前高亮项：由路由 meta.nav 决定，子路由高亮其父级入口 */
 function isActive(key: string): boolean {
@@ -19,7 +21,7 @@ function go(path: string): void {
 </script>
 
 <template>
-  <nav class="app-nav" aria-label="主导航">
+  <nav class="app-nav" :class="{ 'is-collapsed': collapsed }" aria-label="主导航">
     <ul class="app-nav__list">
       <li v-for="item in navItems" :key="item.key">
         <button
@@ -40,16 +42,13 @@ function go(path: string): void {
       <button
         class="nav-collapse"
         type="button"
-        title="收起左侧导航"
+        :title="collapsed ? '展开左侧导航' : '收起左侧导航'"
+        :aria-expanded="!collapsed"
         @click="emit('collapse')"
       >
-        <span class="nav-collapse__glyph" aria-hidden="true">«</span>
-        收起导航
+        <span class="nav-collapse__glyph" aria-hidden="true">{{ collapsed ? '»' : '«' }}</span>
+        <span v-if="!collapsed" class="nav-collapse__label">收起导航</span>
       </button>
-      <p class="app-nav__version">
-        岗位闯关式实训平台
-        <span class="num">{{ platformInfo.version }}</span>
-      </p>
     </div>
   </nav>
 </template>
@@ -87,6 +86,7 @@ function go(path: string): void {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  transition: opacity 0.16s ease;
 }
 
 .nav-item {
@@ -167,11 +167,31 @@ function go(path: string): void {
   line-height: 1;
 }
 
-.app-nav__version {
-  padding: 10px 12px 0;
-  color: var(--side-muted);
-  font-size: 11px;
-  line-height: 1.6;
-  letter-spacing: 0.06em;
+/* —— 收起态：只剩一条窄栏 + 展开按钮 —— */
+.app-nav.is-collapsed {
+  min-width: var(--nav-w-collapsed);
+  align-items: center;
+  padding: 20px 6px 18px;
+}
+
+.app-nav.is-collapsed .app-nav__list {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.app-nav.is-collapsed .app-nav__foot {
+  width: 100%;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.app-nav.is-collapsed .nav-collapse {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.app-nav.is-collapsed .nav-collapse__glyph {
+  font-size: 16px;
 }
 </style>
