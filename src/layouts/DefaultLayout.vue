@@ -9,19 +9,15 @@ import { getUiPrefs, setUiPrefs } from '@/utils/storage'
 const navCollapsed = ref(getUiPrefs()?.navCollapsed ?? false)
 
 watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value }))
-
-function toggleNav(): void {
-  navCollapsed.value = !navCollapsed.value
-}
 </script>
 
 <template>
   <div class="layout" :class="{ 'is-nav-collapsed': navCollapsed }">
-    <AppHeader :nav-collapsed="navCollapsed" @toggle-nav="toggleNav" />
+    <AppHeader />
 
     <div class="layout__body">
       <div class="layout__nav">
-        <AppNav />
+        <AppNav @collapse="navCollapsed = true" />
       </div>
 
       <main class="layout__main">
@@ -32,6 +28,18 @@ function toggleNav(): void {
         </router-view>
       </main>
     </div>
+
+    <!-- 收起后左侧留一个手柄，点一下重新展开 -->
+    <button
+      v-if="navCollapsed"
+      class="layout__nav-handle"
+      type="button"
+      title="展开左侧导航"
+      aria-label="展开左侧导航"
+      @click="navCollapsed = false"
+    >
+      <span aria-hidden="true">»</span>
+    </button>
 
     <AiAssistantDock />
   </div>
@@ -69,5 +77,34 @@ function toggleNav(): void {
 .layout__main {
   min-width: 0;
   padding: 24px var(--shell-pad) 48px;
+}
+
+/* 展开手柄：贴在左侧边缘，位于顶栏下方 */
+.layout__nav-handle {
+  position: fixed;
+  top: calc(var(--header-h) + 18px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+  color: var(--brand-600);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--sh-1);
+  transition: width 0.18s ease, background 0.18s ease;
+}
+
+.layout__nav-handle:hover {
+  width: 32px;
+  background: var(--brand-050);
 }
 </style>

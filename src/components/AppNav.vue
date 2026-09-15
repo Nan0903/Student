@@ -6,6 +6,8 @@ import { navItems, platformInfo } from '@/config/nav'
 const route = useRoute()
 const router = useRouter()
 
+const emit = defineEmits<{ collapse: [] }>()
+
 /** 当前高亮项：由路由 meta.nav 决定，子路由高亮其父级入口 */
 function isActive(key: string): boolean {
   return route.meta.nav === key
@@ -34,10 +36,21 @@ function go(path: string): void {
       </li>
     </ul>
 
-    <p class="app-nav__foot">
-      岗位闯关式实训平台
-      <span class="num">{{ platformInfo.version }}</span>
-    </p>
+    <div class="app-nav__foot">
+      <button
+        class="nav-collapse"
+        type="button"
+        title="收起左侧导航"
+        @click="emit('collapse')"
+      >
+        <span class="nav-collapse__glyph" aria-hidden="true">«</span>
+        收起导航
+      </button>
+      <p class="app-nav__version">
+        岗位闯关式实训平台
+        <span class="num">{{ platformInfo.version }}</span>
+      </p>
+    </div>
   </nav>
 </template>
 
@@ -120,8 +133,42 @@ function go(path: string): void {
 
 .app-nav__foot {
   margin-top: auto;
-  padding: 12px 12px 0;
+  padding: 12px 0 0;
   border-top: 1px solid var(--side-hairline);
+}
+
+/* —— 底部：收起导航 —— */
+.nav-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.nav-collapse:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-050);
+  color: var(--brand-600);
+}
+
+.nav-collapse__glyph {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.app-nav__version {
+  padding: 10px 12px 0;
   color: var(--side-muted);
   font-size: 11px;
   line-height: 1.6;
