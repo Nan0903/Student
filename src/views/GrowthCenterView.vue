@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import PageTitle from '@/components/PageTitle.vue'
 import PositionCard from '@/components/PositionCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useChatStore } from '@/stores/chat'
@@ -121,19 +120,16 @@ onMounted(async () => {
 
 <template>
   <div class="growth">
-    <PageTitle
-      title="成长中心"
-    >
-      <template #extra>
-        <div v-if="currentPosition" class="current-chip">
-          <span class="current-chip__text">
-            <span class="current-chip__label">当前岗位</span>
-            <span class="current-chip__name">{{ currentPosition.name }}</span>
-          </span>
-          <span class="current-chip__match num">{{ currentPosition.percent }}%</span>
-        </div>
-      </template>
-    </PageTitle>
+    <!-- 页面标题已去掉，当前岗位只在有数据时占一行 -->
+    <div v-if="currentPosition" class="page-toolbar">
+      <div class="current-chip">
+        <span class="current-chip__text">
+          <span class="current-chip__label">当前岗位</span>
+          <span class="current-chip__name">{{ currentPosition.name }}</span>
+        </span>
+        <span class="current-chip__match num">{{ currentPosition.percent }}%</span>
+      </div>
+    </div>
 
     <!-- 我的岗位 -->
     <section class="panel block">

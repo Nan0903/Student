@@ -6,6 +6,7 @@ import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LevelStepper from '@/components/LevelStepper.vue'
 import { useChatStore } from '@/stores/chat'
+import { useEnumStore } from '@/stores/enums'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { formatFileSize, tierLabel } from '@/utils/format'
@@ -16,6 +17,7 @@ const router = useRouter()
 const projectStore = useProjectStore()
 const positionStore = usePositionStore()
 const chat = useChatStore()
+const enums = useEnumStore()
 
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const project = computed(() => projectStore.getProject(projectId.value))
@@ -53,12 +55,16 @@ const activeGate = computed(() => activeState.value?.gate ?? 'locked')
 const history = computed(() => projectStore.history[projectId.value] ?? [])
 const comments = computed(() => projectStore.comments[projectId.value] ?? [])
 
-/** 项目资料：用途文案与图标 */
+/** 项目资料：用途文案优先取后端字典（project_file_kind），图标本地维护 */
 const fileKindLabel: Record<ProjectFileKind, string> = {
   REPORT_TEMPLATE: '报告模板',
   DATASET: '数据文件',
   GUIDE: '说明文档',
   OTHER: '其它',
+}
+
+function fileKindText(kind: ProjectFileKind): string {
+  return enums.label('project_file_kind', kind, fileKindLabel[kind])
 }
 
 function fileIcon(kind: ProjectFileKind): string {
@@ -349,7 +355,8 @@ watch(
 onMounted(async () => {
   chat.contextLabel = '关卡详情 · 逐关提交实训成果'
   await Promise.all([projectStore.load(), positionStore.load()])
-  const current = project.value ?? (await projectStore.loadProject(projectId.value))
+  // 列表接口不带关卡组成，进详情页时补齐全量数据（关卡 + 项目资料）
+  const current = (await projectStore.loadProject(projectId.value)) ?? project.value
   if (current) {
     await projectStore.loadWork(current.id)
     chat.contextLabel = `《${current.name}》实训 · 逐关提交`
@@ -460,7 +467,7 @@ onUnmounted(() => {
                 <span class="material__main">
                   <span class="material__title">{{ file.title }}</span>
                   <span class="material__meta">
-                    {{ fileKindLabel[file.fileKind] }} · {{ formatFileSize(file.sizeBytes) }}
+                    {{ fileKindText(file.fileKind) }} · {{ formatFileSize(file.sizeBytes) }}
                   </span>
                 </span>
                 <a

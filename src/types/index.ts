@@ -453,4 +453,6 @@ export interface NavItem {
   key: string
   label: string
   path: string
+  /** 左侧栏分组标题（分组只影响展示，增删入口只改 config/nav.ts） */
+  group?: string
 }

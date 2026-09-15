@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useEnumStore } from '@/stores/enums'
 import { projectStatusLabel, projectStatusTone } from '@/utils/format'
 import type { Project, ProjectSkillTag } from '@/types'
 
@@ -13,8 +14,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{ open: [project: Project] }>()
 
+const enums = useEnumStore()
+
+/** 前端项目状态 → 后端字典 code（locked 是前端的锁定态，后端字典里没有） */
+const STATUS_CODE: Record<string, string> = {
+  not_started: 'NOT_STARTED',
+  in_progress: 'IN_PROGRESS',
+  submitted: 'SUBMITTED',
+  completed: 'COMPLETED',
+}
+
 const tone = computed(() => projectStatusTone[props.project.status])
-const label = computed(() => projectStatusLabel[props.project.status])
+// 状态文案优先取后端字典，字典没加载到就用本地兜底
+const label = computed(() =>
+  enums.label(
+    'student_project_status',
+    STATUS_CODE[props.project.status],
+    projectStatusLabel[props.project.status],
+  ),
+)
 const locked = computed(() => props.project.status === 'locked')
 const score = computed(() => props.project.score)
 

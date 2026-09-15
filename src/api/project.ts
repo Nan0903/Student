@@ -255,6 +255,50 @@ interface BackendProjectSkillRef {
   id: number
 }
 
+/** 学生项目列表项（后端的 /students/{id}/training-projects） */
+interface BackendStudentTrainingProject {
+  project_id: number
+  project_name: string
+  project_level: string
+  job_id: number | null
+  job_name: string | null
+  status: string
+  best_score: string | number | null
+  total_score: string | number | null
+  progress: string | number
+  level_total: number
+  level_done: number
+  skill_nodes: {
+    skill_node_id: number
+    node_code: string
+    node_name: string
+    tree_id: number
+    tree_code: string | null
+    tree_name: string | null
+  }[]
+}
+
+/** 列表项 → Project（不含关卡与附件，进详情页时再补） */
+function toProjectListItem(item: BackendStudentTrainingProject): Project {
+  const score = item.best_score === null ? undefined : Math.round(toNumber(item.best_score))
+  return {
+    id: String(item.project_id),
+    name: item.project_name,
+    tier: TIER_BY_LEVEL[item.project_level] ?? 'basic',
+    positionId: item.job_id === null ? '' : String(item.job_id),
+    skillIds: (item.skill_nodes ?? []).map((node) => String(node.skill_node_id)),
+    status: toProjectStatus(item.status),
+    levelTotal: item.level_total,
+    levelDone: item.level_done,
+    progress: Math.round(toNumber(item.progress)),
+    score,
+    // 简介 / 关卡 / 项目资料只有详情接口有，进入详情页时会补上
+    intro: '',
+    modules: [],
+    files: [],
+  }
+}
+
 function toProjectStatus(status: string): ProjectStatus {
   switch (status) {
     case 'IN_PROGRESS':
@@ -514,13 +558,27 @@ function buildWork(projectId: string, detail: BackendStudentProjectDetailFull): 
 /* 对外接口                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** 学生可见的项目列表（只要已发布的）+ 本人进度 */
+/**
+ * 学生项目列表：用后端的学生成长视图接口一次拿全
+ * （项目 + 我的最高分 / 关卡进度 / 所属岗位 / 关联技能点 / 状态）。
+ *
+ * 注意：列表接口不含 `modules` 与项目附件，这两样只有详情页需要，
+ * 由 `fetchProject()` 按需补齐（见 stores/project.ts 的 loadProject）。
+ */
 export async function fetchProjects(): Promise<Project[]> {
   const studentId = requireStudentId()
-  const [list, templates, records] = await Promise.all([
-    get<Page<BackendProjectBase>>('/projects', {
-      query: { status: 'PUBLISHED', page_size: 200 },
-    }),
+  const items = await get<BackendStudentTrainingProject[]>(
+    `/students/${studentId}/training-projects`,
+  )
+  return items.map(toProjectListItem)
+}
+
+/** 单个项目的全量数据（含关卡组成与项目资料），详情页进入时调用 */
+export async function fetchProject(projectId: string): Promise<Project | null> {
+  const studentId = requireStudentId()
+  const [detail, skills, templates, records] = await Promise.all([
+    get<BackendProjectDetail>(`/projects/${projectId}`),
+    get<BackendProjectSkillRef[]>(`/projects/${projectId}/skills`),
     get<Page<BackendStageTemplate>>('/stage-templates', { query: { page_size: 200 } }),
     get<BackendStudentProjectDetail[]>(`/students/${studentId}/projects`),
   ])
@@ -528,28 +586,12 @@ export async function fetchProjects(): Promise<Project[]> {
   const templateDescriptions = new Map(
     templates.items.map((item) => [item.stage_key, item.description ?? '']),
   )
-  const [details, skillLists] = await Promise.all([
-    Promise.all(list.items.map((project) => get<BackendProjectDetail>(`/projects/${project.id}`))),
-    Promise.all(
-      list.items.map((project) =>
-        get<BackendProjectSkillRef[]>(`/projects/${project.id}/skills`),
-      ),
-    ),
-  ])
-
-  return details.map((detail, index) =>
-    toProject(
-      detail,
-      templateDescriptions,
-      records.find((record) => record.project_id === detail.id) ?? null,
-      (skillLists[index] ?? []).map((node) => String(node.id)),
-    ),
+  return toProject(
+    detail,
+    templateDescriptions,
+    records.find((record) => String(record.project_id) === projectId) ?? null,
+    skills.map((node) => String(node.id)),
   )
-}
-
-export async function fetchProject(projectId: string): Promise<Project | null> {
-  const projects = await fetchProjects()
-  return projects.find((item) => item.id === projectId) ?? null
 }
 
 /**

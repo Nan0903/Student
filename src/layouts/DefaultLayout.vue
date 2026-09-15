@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import AppNav from '@/components/AppNav.vue'
 import AiAssistantDock from '@/components/AiAssistantDock.vue'
+import { useEnumStore } from '@/stores/enums'
 import { getUiPrefs, setUiPrefs } from '@/utils/storage'
 
 /** 左侧导航是否收起：记住用户的选择 */
 const navCollapsed = ref(getUiPrefs()?.navCollapsed ?? false)
 
 watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value }))
+
+/** 枚举字典（状态 → 中文文案）全站只拉一次，拿不到时各页面用自己的兜底文案 */
+const enums = useEnumStore()
+onMounted(() => {
+  void enums.load()
+})
 </script>
 
 <template>

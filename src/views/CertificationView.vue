@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import EmptyState from '@/components/EmptyState.vue'
-import PageTitle from '@/components/PageTitle.vue'
 import { fetchCertificationOverview } from '@/api/certification'
 import { platformInfo } from '@/config/nav'
 import logoImage from '@/assets/images/logo.png'
@@ -91,13 +90,10 @@ onMounted(async () => {
 
 <template>
   <div class="certification">
-    <PageTitle
-      title="技能鉴定"
-    >
-      <template #extra>
-        <el-button @click="comingSoon">查看技能鉴定书</el-button>
-      </template>
-    </PageTitle>
+    <!-- 页面标题已去掉，操作按钮保留在顶部工具条里 -->
+    <div class="page-toolbar">
+      <el-button @click="comingSoon">查看技能鉴定书</el-button>
+    </div>
 
     <!-- 认证条件三卡 -->
     <section class="conditions">

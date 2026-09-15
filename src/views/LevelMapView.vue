@@ -3,9 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import EmptyState from '@/components/EmptyState.vue'
-import PageTitle from '@/components/PageTitle.vue'
 import ProjectCard from '@/components/ProjectCard.vue'
 import { useChatStore } from '@/stores/chat'
+import { useEnumStore } from '@/stores/enums'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
@@ -18,18 +18,20 @@ const projectStore = useProjectStore()
 const positionStore = usePositionStore()
 const skillStore = useSkillStore()
 const chat = useChatStore()
+const enums = useEnumStore()
 
 const ALL = 'all'
 const selectedPosition = ref<string>(ALL)
 const highlightProjectId = ref('')
 const skillFilter = ref('')
 
-const legend = [
+/** 图例：文案取后端字典（student_project_status），「未解锁」是前端的锁定态、字典里没有 */
+const legend = computed(() => [
   { tone: 'lock', label: '未解锁' },
-  { tone: 'todo', label: '可挑战' },
-  { tone: 'wip', label: '进行中' },
-  { tone: 'done', label: '已完成' },
-]
+  { tone: 'todo', label: enums.label('student_project_status', 'NOT_STARTED', '可挑战') },
+  { tone: 'wip', label: enums.label('student_project_status', 'IN_PROGRESS', '进行中') },
+  { tone: 'done', label: enums.label('student_project_status', 'COMPLETED', '已完成') },
+])
 
 const loading = computed(() => projectStore.loading || positionStore.loading)
 
@@ -128,18 +130,15 @@ onMounted(async () => {
 
 <template>
   <div class="level-map">
-    <PageTitle
-      title="关卡地图"
-    >
-      <template #extra>
-        <ul class="legend">
-          <li v-for="item in legend" :key="item.tone" class="legend__item">
-            <span class="legend__dot" :class="`legend__dot--${item.tone}`" />
-            {{ item.label }}
-          </li>
-        </ul>
-      </template>
-    </PageTitle>
+    <!-- 页面标题已去掉，状态图例保留在顶部工具条里 -->
+    <div class="page-toolbar">
+      <ul class="legend">
+        <li v-for="item in legend" :key="item.tone" class="legend__item">
+          <span class="legend__dot" :class="`legend__dot--${item.tone}`" />
+          {{ item.label }}
+        </li>
+      </ul>
+    </div>
 
     <!-- 岗位筛选 -->
     <div class="filter panel">

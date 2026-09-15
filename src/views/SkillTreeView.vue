@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { Graph } from '@antv/g6'
 import type { EdgeData, GraphData, NodeData } from '@antv/g6'
 import { useRouter } from 'vue-router'
-import PageTitle from '@/components/PageTitle.vue'
 import { platformInfo } from '@/config/nav'
 import { useChatStore } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
@@ -341,26 +340,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="skill-tree">
-    <PageTitle
-      title="技能树"
-    >
-      <template #extra>
-        <div v-if="platformInfo.showSkillStats" class="stats">
-          <div class="stats__item">
-            <span class="stats__value num">{{ stats.percent }}%</span>
-            <span class="stats__label">整体进度</span>
-          </div>
-          <div class="stats__item">
-            <span class="stats__value num">{{ stats.done }}</span>
-            <span class="stats__label">技能点已完成</span>
-          </div>
-          <div class="stats__item">
-            <span class="stats__value num">{{ stats.total }}</span>
-            <span class="stats__label">技能点总数</span>
-          </div>
+    <!-- 页面标题已去掉，统计面板保留在顶部工具条里 -->
+    <div v-if="platformInfo.showSkillStats" class="page-toolbar">
+      <div class="stats">
+        <div class="stats__item">
+          <span class="stats__value num">{{ stats.percent }}%</span>
+          <span class="stats__label">整体进度</span>
         </div>
-      </template>
-    </PageTitle>
+        <div class="stats__item">
+          <span class="stats__value num">{{ stats.done }}</span>
+          <span class="stats__label">技能点已完成</span>
+        </div>
+        <div class="stats__item">
+          <span class="stats__value num">{{ stats.total }}</span>
+          <span class="stats__label">技能点总数</span>
+        </div>
+      </div>
+    </div>
 
     <section class="canvas">
       <header class="canvas__bar">

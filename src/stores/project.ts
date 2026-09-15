@@ -127,9 +127,15 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  /**
+   * 确保拿到项目的全量数据（关卡组成 + 项目资料）。
+   *
+   * 列表接口（学生成长视图）不含关卡，而详情页要关卡才能渲染步骤条与作答区，
+   * 所以进详情页时用这里补齐；已经有全量数据就直接复用缓存。
+   */
   async function loadProject(projectId: string): Promise<Project | null> {
     const cached = getProject(projectId)
-    if (cached) return cached
+    if (cached && cached.modules.length > 0) return cached
     const project = await fetchProject(projectId)
     if (project) projects.value = [...projects.value.filter((item) => item.id !== project.id), project]
     return project

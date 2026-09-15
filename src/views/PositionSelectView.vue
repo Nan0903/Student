@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import EmptyState from '@/components/EmptyState.vue'
-import PageTitle from '@/components/PageTitle.vue'
 import PositionCard from '@/components/PositionCard.vue'
 import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
@@ -81,10 +80,6 @@ onMounted(async () => {
 
 <template>
   <div class="positions">
-    <PageTitle
-      title="选择你的目标岗位"
-    />
-
     <!-- 未达成前置条件 -->
     <section v-if="!preconditionMet" class="panel">
       <EmptyState
