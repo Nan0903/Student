@@ -15,6 +15,12 @@ export function formatShortDate(value: string): string {
   return match ? `${match[2]}-${match[3]}` : value
 }
 
+/** 后端返回的 ISO 时间（2026-09-14T00:31:17.769933）→ 2026-09-14 00:31 */
+export function formatDateTime(value: string): string {
+  const match = value.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/)
+  return match ? `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}` : value
+}
+
 export const tierLabel: Record<ProjectTier, string> = {
   basic: '基础实训',
   advanced: '进阶实训',
@@ -32,6 +38,7 @@ export const tierOrder: ProjectTier[] = ['basic', 'advanced', 'extended']
 export const projectStatusLabel: Record<ProjectStatus, string> = {
   not_started: '可挑战',
   in_progress: '进行中',
+  submitted: '待评审',
   completed: '已完成',
   locked: '未解锁',
 }
@@ -40,6 +47,7 @@ export const projectStatusLabel: Record<ProjectStatus, string> = {
 export const projectStatusTone: Record<ProjectStatus, 'todo' | 'wip' | 'done' | 'lock'> = {
   not_started: 'todo',
   in_progress: 'wip',
+  submitted: 'wip',
   completed: 'done',
   locked: 'lock',
 }
@@ -47,6 +55,7 @@ export const projectStatusTone: Record<ProjectStatus, 'todo' | 'wip' | 'done' | 
 export const projectStatusIcon: Record<ProjectStatus, string> = {
   not_started: '⚡',
   in_progress: '▶',
+  submitted: '📝',
   completed: '🏆',
   locked: '🔒',
 }

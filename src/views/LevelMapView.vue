@@ -101,7 +101,8 @@ onMounted(async () => {
   const skillQuery = typeof route.query.skill === 'string' ? route.query.skill : ''
   const projectQuery = typeof route.query.project === 'string' ? route.query.project : ''
 
-  selectedPosition.value = positionQuery || positionStore.currentPositionId || ALL
+  // 默认展示全部岗位：后端一个项目只绑一个岗位，按当前岗位过滤经常会是一张空列表
+  selectedPosition.value = positionQuery || ALL
   skillFilter.value = skillQuery
   highlightProjectId.value = projectQuery
 })

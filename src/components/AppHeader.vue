@@ -16,7 +16,8 @@ const profile = computed(() => user.profile)
 const initial = computed(() => profile.value?.name.slice(0, 1) ?? '同')
 
 const metrics = computed(() => [
-  { key: 'points', label: '累计积分', value: formatNumber(profile.value?.points ?? 0), to: '' },
+  // 后端没有积分字段，这里显示的是已完成项目的得分合计
+  { key: 'points', label: '累计得分', value: formatNumber(profile.value?.points ?? 0), to: '' },
   { key: 'level', label: '实训等级', value: profile.value?.level ?? '—', to: '' },
   { key: 'rate', label: '完成率', value: `${profile.value?.completionRate ?? 0}%`, to: '/skill-tree' },
 ])

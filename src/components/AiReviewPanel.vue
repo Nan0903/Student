@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { AiReview } from '@/types'
 
 const props = defineProps<{
@@ -11,22 +11,43 @@ const props = defineProps<{
 const emit = defineEmits<{
   back: []
   recheck: [note: string]
-  simulate: []
+  withdraw: []
 }>()
 
 const note = ref('')
 
 const statusText: Record<AiReview['reviewStatus'], string> = {
+  saved: '本关作答已保存到服务器',
+  pending: '整单已提交，等待评审结果',
   passed: 'AI 已完成本次实训的自动评判',
+  failed: 'AI 判定本次未通过，可申请教师复核',
   pending_recheck: '已提交复评申请，等待教师复审',
   rechecked: '教师已完成复审，结果已回流',
 }
+
+/** 有分数才画总分环 */
+const hasScore = computed(() => typeof props.review.totalScore === 'number')
+
+/** AI 已出结论（通过 / 未通过）才能提异议，转教师复核 */
+const canObject = computed(
+  () =>
+    props.review.submissionStatus === 'AI_PASSED' ||
+    props.review.submissionStatus === 'AI_FAILED',
+)
+
+/** 后端规则：已复审 / 已撤回 / 复核中都不能撤回 */
+const canWithdraw = computed(() => {
+  const status = props.review.submissionStatus
+  if (!status) return false
+  return !['REVIEWED', 'WITHDRAWN', 'PENDING_REVIEW', 'REVIEWING'].includes(status)
+})
 </script>
 
 <template>
   <div class="review">
     <header class="review__banner">
       <div
+        v-if="hasScore"
         class="review__ring"
         :style="{ '--percent': review.totalScore }"
         role="img"
@@ -37,9 +58,14 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
           <span class="review__score-unit">分</span>
         </div>
       </div>
+      <div v-else class="review__ring review__ring--idle" aria-hidden="true">
+        <div class="review__ring-inner">
+          <span class="review__ring-idle">待</span>
+        </div>
+      </div>
       <div class="review__headline">
         <p class="review__grade">
-          <span class="review__grade-badge">{{ review.grade }}</span>
+          <span v-if="review.grade" class="review__grade-badge">{{ review.grade }}</span>
           <span class="review__module">{{ moduleName }}</span>
         </p>
         <p class="review__desc">{{ statusText[review.reviewStatus] }}</p>
@@ -48,8 +74,9 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
     </header>
 
     <section class="review__body">
-      <h4 class="review__section-title">各维度评分</h4>
-      <ul class="review__dimensions">
+      <template v-if="review.dimensions.length > 0">
+        <h4 class="review__section-title">各维度评分</h4>
+        <ul class="review__dimensions">
         <li
           v-for="dimension in review.dimensions"
           :key="dimension.name"
@@ -65,10 +92,11 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
             <p class="dimension__reason">{{ dimension.reason }}</p>
           </div>
         </li>
-      </ul>
+        </ul>
+      </template>
 
-      <div class="review__suggestion">
-        <p class="review__suggestion-title">AI 提升建议</p>
+      <div v-if="review.suggestion" class="review__suggestion">
+        <p class="review__suggestion-title">{{ review.reviewStatus === 'rechecked' ? '教师评语' : '批注与建议' }}</p>
         <p class="review__suggestion-text">{{ review.suggestion }}</p>
       </div>
 
@@ -80,7 +108,7 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
         <p class="review__teacher-comment">{{ review.teacherComment }}</p>
       </div>
 
-      <div v-if="review.reviewStatus === 'passed'" class="review__recheck">
+      <div v-if="canObject" class="review__recheck">
         <el-input
           v-model="note"
           type="textarea"
@@ -88,30 +116,21 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
           maxlength="200"
           show-word-limit
           resize="none"
-          placeholder="如果对结果有异议，可填写异议说明（选填，≤200 字）后申请教师复评"
+          placeholder="如果对结果有异议，可填写异议说明（选填，≤200 字）后申请教师复核"
         />
       </div>
     </section>
 
     <footer class="review__foot">
-      <el-button round @click="emit('back')">返回关卡地图</el-button>
-      <el-button
-        v-if="review.reviewStatus === 'passed'"
-        type="warning"
-        round
-        @click="emit('recheck', note)"
-      >
-        申请教师复评
+      <el-button round @click="emit('back')">
+        {{ review.reviewStatus === 'saved' ? '继续下一关' : '返回关卡地图' }}
       </el-button>
-      <el-button
-        v-else-if="review.reviewStatus === 'pending_recheck'"
-        type="primary"
-        round
-        @click="emit('simulate')"
-      >
-        模拟教师完成复审
+      <el-button v-if="canWithdraw" type="warning" round @click="emit('withdraw')">
+        撤回本次提交
       </el-button>
-      <el-button v-else type="primary" round @click="emit('back')">继续下一关</el-button>
+      <el-button v-if="canObject" type="warning" round @click="emit('recheck', note)">
+        申请教师复核
+      </el-button>
     </footer>
   </div>
 </template>
@@ -175,6 +194,21 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
   color: #d46b08;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* 还没有分数（已保存 / 待评审）：画一个静态灰环 */
+.review__ring--idle {
+  background: conic-gradient(from -90deg, rgba(140, 160, 190, 0.28), rgba(140, 160, 190, 0.12));
+}
+
+.review__ring--idle .review__ring-inner {
+  box-shadow: 0 2px 10px rgba(120, 140, 170, 0.16);
+}
+
+.review__ring-idle {
+  color: var(--ink-3);
+  font-size: 30px;
+  font-weight: 700;
 }
 
 .review__headline {

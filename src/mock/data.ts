@@ -774,6 +774,8 @@ export const projects: Project[] = PROJECT_SEEDS.map((seed) => {
     levelTotal,
     progress: Math.round((seed.levelDone / levelTotal) * 100),
     modules,
+    // 项目资料由教师端上传，Mock 里没有
+    files: [],
   }
 })
 

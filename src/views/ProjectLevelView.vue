@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, UploadFilled } from '@element-plus/icons-vue'
@@ -9,8 +9,8 @@ import LevelStepper from '@/components/LevelStepper.vue'
 import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
-import { formatFileSize, localId, tierLabel } from '@/utils/format'
-import type { AiReview, UploadFile } from '@/types'
+import { formatFileSize, tierLabel } from '@/utils/format'
+import type { AiReview, ProjectFileKind } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,11 +21,20 @@ const chat = useChatStore()
 const projectId = computed(() => String(route.params.projectId ?? ''))
 const project = computed(() => projectStore.getProject(projectId.value))
 const states = computed(() => (project.value ? projectStore.moduleStates(project.value) : []))
+const work = computed(() => projectStore.getWork(projectId.value))
+/** 后端还没有这条实训记录 = 还没开始闯关 */
+const notStarted = computed(() => !work.value?.attemptId)
+/** 已提交 / 已完成：本轮不能再改作答 */
+const readOnly = computed(
+  () => work.value?.status === 'SUBMITTED' || work.value?.status === 'COMPLETED',
+)
 
 const activeModuleId = ref('')
 const answers = ref<Record<string, string>>({})
-const files = ref<UploadFile[]>([])
-const progress = ref<Record<string, number>>({})
+/** 本关已上传到服务器的附件（后端为准，不做本地缓存） */
+const files = computed(() => projectStore.getStageFiles(projectId.value, activeModuleId.value))
+/** 正在上传的文件：文件名 → 进度百分比 */
+const uploading = ref<Record<string, number>>({})
 
 const reviewVisible = ref(false)
 const reviewing = ref(false)
@@ -45,6 +54,27 @@ const activeGate = computed(() => activeState.value?.gate ?? 'locked')
 const history = computed(() => projectStore.history[projectId.value] ?? [])
 const comments = computed(() => projectStore.comments[projectId.value] ?? [])
 
+/** 项目资料：用途文案与图标 */
+const fileKindLabel: Record<ProjectFileKind, string> = {
+  REPORT_TEMPLATE: '报告模板',
+  DATASET: '数据文件',
+  GUIDE: '说明文档',
+  OTHER: '其它',
+}
+
+function fileIcon(kind: ProjectFileKind): string {
+  switch (kind) {
+    case 'REPORT_TEMPLATE':
+      return '📄'
+    case 'DATASET':
+      return '📊'
+    case 'GUIDE':
+      return '📘'
+    default:
+      return '📎'
+  }
+}
+
 /** 必填校验：文本题必填，报告上传关必须带附件 */
 const missingFields = computed(() => {
   const module = activeModule.value
@@ -55,25 +85,68 @@ const missingFields = computed(() => {
       missing.push(question.label)
     }
   }
-  if (module.name === '报告上传' && files.value.length === 0) {
+  if (module.name.includes('报告') && files.value.length === 0) {
     missing.push('实训报告附件')
   }
   return missing
 })
 
 const canSubmit = computed(
-  () => Boolean(activeModule.value) && missingFields.value.length === 0 && !reviewing.value,
+  () =>
+    Boolean(activeModule.value) &&
+    !notStarted.value &&
+    !readOnly.value &&
+    missingFields.value.length === 0 &&
+    !reviewing.value,
 )
 
+/** 顶部状态条：整单提交 / 评审完成后给学生的明确提示 */
+const statusBanner = computed(() => {
+  if (work.value?.status === 'SUBMITTED') {
+    return {
+      tone: 'wip' as const,
+      text:
+        work.value.submissionStatus === 'PENDING_AI'
+          ? '本单已提交，AI 判分尚未接入，正在等待评审'
+          : '本单已提交，正在等待教师复核',
+    }
+  }
+  if (work.value?.status === 'COMPLETED') {
+    return { tone: 'done' as const, text: `本单已通过评审，得分 ${project.value?.score ?? '—'}` }
+  }
+  return null
+})
+
+/** 判分弹窗标题：AI 判分未接入，按当前状态如实命名 */
+const dialogTitle = computed(() => {
+  switch (review.value?.reviewStatus) {
+    case 'saved':
+      return '本关作答已保存'
+    case 'pending':
+      return '整单提交结果'
+    case 'pending_recheck':
+      return '复评申请已提交'
+    default:
+      return review.value ? '评审结果' : '提交结果'
+  }
+})
+
 let draftTimer = 0
+/** 回填作答期间不写草稿：否则「只是翻看某一关」也会被当成学生编辑过 */
+const hydrating = ref(false)
 
 function hydrate(moduleId: string): void {
-  const submission = projectStore.getSubmission(projectId.value, moduleId)
+  hydrating.value = true
   const draft = projectStore.getDraft(projectId.value, moduleId)
-  const source = submission ?? draft
+  const submission = projectStore.getSubmission(projectId.value, moduleId)
+  // 草稿代表"还没保存到服务器的改动"，优先回填
+  const source = draft ?? submission
   answers.value = source ? { ...source.textAnswers } : {}
-  files.value = source ? [...source.files] : []
-  progress.value = {}
+  void nextTick(() => {
+    hydrating.value = false
+  })
+  // 附件存在服务器上，切关时单独拉一次
+  void projectStore.loadStageFiles(projectId.value, moduleId)
 }
 
 function selectModule(moduleId: string): void {
@@ -94,47 +167,59 @@ function setAnswer(id: string, value: string | number): void {
   answers.value = { ...answers.value, [id]: String(value) }
 }
 
-function saveDraft(): void {
+/** 把当前输入落到本机草稿（保存 / 提交前调用，避免防抖还没写） */
+function persistDraft(): void {
   const module = activeModule.value
   if (!module) return
   projectStore.saveDraft(projectId.value, module.id, {
     textAnswers: answers.value,
-    files: files.value,
   })
-  ElMessage.success('草稿已保存到本机')
 }
 
-function appendFiles(fileList: { name: string; size: number; raw?: File }[]): void {
-  for (const item of fileList) {
-    const entry: UploadFile = {
-      id: localId('file'),
-      name: item.name,
-      size: item.size,
-      type: item.raw?.type ?? 'file',
-      uploadedAt: new Date().toISOString(),
-    }
-    files.value = [...files.value, entry]
-    progress.value = { ...progress.value, [entry.id]: 0 }
-    // 模拟上传进度（真实接口就绪后替换为上传回调）
-    const step = window.setInterval(() => {
-      const current = progress.value[entry.id] ?? 0
-      const next = Math.min(100, current + 18)
-      progress.value = { ...progress.value, [entry.id]: next }
-      if (next >= 100) window.clearInterval(step)
-    }, 90)
+/** 保存本关到服务器：多题按「【标题】+ 内容」拼成一段文本落库 */
+async function saveCurrent(): Promise<void> {
+  const module = activeModule.value
+  if (!module || readOnly.value || notStarted.value) return
+  persistDraft()
+  try {
+    await projectStore.saveStage(projectId.value, module.id)
+    ElMessage.success('本关作答已保存到服务器')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存失败，请稍后重试')
   }
 }
 
-function handleUploadChange(file: { name?: string; size?: number; raw?: File }): void {
-  if (!file.name) return
-  appendFiles([{ name: file.name, size: file.size ?? 0, raw: file.raw }])
+/** 选好文件 → 真上传到服务器并挂到本关 */
+async function handleUploadChange(file: { name?: string; raw?: File }): Promise<void> {
+  const module = activeModule.value
+  const raw = file.raw
+  if (!module || !raw) return
+  const name = file.name ?? raw.name
+  uploading.value = { ...uploading.value, [name]: 0 }
+  try {
+    await projectStore.uploadStageFile(projectId.value, module.id, raw, (percent) => {
+      uploading.value = { ...uploading.value, [name]: percent }
+    })
+    ElMessage.success(`「${name}」已上传`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '上传失败，请稍后重试')
+  } finally {
+    const next = { ...uploading.value }
+    delete next[name]
+    uploading.value = next
+  }
 }
 
-function removeFile(id: string): void {
-  files.value = files.value.filter((file) => file.id !== id)
-  const next = { ...progress.value }
-  delete next[id]
-  progress.value = next
+/** 解除本关的一个附件 */
+async function removeFile(fileId: string): Promise<void> {
+  const module = activeModule.value
+  if (!module) return
+  try {
+    await projectStore.removeStageFile(projectId.value, module.id, fileId)
+    ElMessage.success('附件已移除')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '移除失败，请稍后重试')
+  }
 }
 
 async function submit(): Promise<void> {
@@ -145,58 +230,100 @@ async function submit(): Promise<void> {
     return
   }
 
+  persistDraft()
   reviewVisible.value = true
   reviewing.value = true
   review.value = null
   reviewModuleName.value = module.name
 
   try {
-    const result = await projectStore.submit({
-      projectId: projectId.value,
-      moduleId: module.id,
-      textAnswers: answers.value,
-      files: files.value,
-    })
+    const result = await projectStore.submitStage(projectId.value, module.id)
     review.value = result
-    const moduleName = project.value?.modules.find((item) => item.id === module.id)?.name ?? ''
-    const nextState = states.value.find((state) => state.gate === 'current')
-    if (nextState && nextState.module.id !== module.id) {
-      ElMessage.success(`「${moduleName}」已通过，下一关已解锁`)
-    } else if (nextState) {
-      ElMessage.success('关卡已通过')
+    if (result.reviewStatus === 'saved') {
+      ElMessage.success(`「${module.name}」已保存，下一关已解锁`)
+    } else {
+      ElMessage.success('整单已提交，等待评审结果')
     }
+  } catch (error) {
+    reviewVisible.value = false
+    ElMessage.error(error instanceof Error ? error.message : '提交失败，请稍后重试')
   } finally {
     reviewing.value = false
   }
 }
 
 async function applyRecheck(note: string): Promise<void> {
-  const module = activeModule.value
-  if (!module) return
   try {
     await ElMessageBox.confirm(
-      '申请后本关状态将变为「待复审」，教师完成复审后结果会回流到这里。确认提交申请？',
+      '申请后本次提交会转入教师复核，复核完成前不能撤回。确认提交申请？',
       '确认申请教师复评',
       { confirmButtonText: '确认申请', cancelButtonText: '再想想', type: 'warning' },
     )
   } catch {
     return
   }
-  const updated = await projectStore.requestTeacherRecheck(projectId.value, module.id, note)
-  if (updated) {
-    review.value = updated
-    ElMessage.success('已提交复评申请，状态更新为「待复审」')
+  try {
+    const updated = await projectStore.requestRecheck(projectId.value, note)
+    if (updated) review.value = updated
+    ElMessage.success('已提交复评申请，等待教师复核')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '申请失败，请稍后重试')
   }
 }
 
-async function simulateRecheck(): Promise<void> {
+/** 撤回本次整单提交，回到可编辑 */
+async function withdraw(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '撤回后本次提交作废，你可以继续修改作答并重新提交。确认撤回？',
+      '撤回提交',
+      { confirmButtonText: '确认撤回', cancelButtonText: '再想想', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await projectStore.withdraw(projectId.value)
+    reviewVisible.value = false
+    const module = activeModule.value
+    if (module) hydrate(module.id)
+    ElMessage.success('已撤回提交，可以继续修改作答')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '撤回失败，请稍后重试')
+  }
+}
+
+/** 开始闯关 / 重新挑战：后端会新建一轮并预建各关作答行 */
+async function startWork(): Promise<void> {
+  try {
+    const result = await projectStore.startWork(projectId.value)
+    const first = result?.stages.find((stage) => !stage.isFilled) ?? result?.stages[0]
+    if (first) {
+      activeModuleId.value = first.moduleId
+      hydrate(first.moduleId)
+    }
+    ElMessage.success('已开始闯关，逐关完成作答即可')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '开始闯关失败，请稍后重试')
+  }
+}
+
+/** 已完成的关卡：回看评审结果 */
+function openLastReview(): void {
   const module = activeModule.value
   if (!module) return
-  const updated = await projectStore.simulateTeacherRecheck(projectId.value, module.id)
-  if (updated) {
-    review.value = updated
-    ElMessage.success('教师复审结果已回流')
-  }
+  const stage = work.value?.stages.find((item) => item.moduleId === module.id)
+  reviewModuleName.value = module.name
+  review.value =
+    work.value?.review ??
+    (stage?.isFilled
+      ? {
+          dimensions: [],
+          reviewStatus: 'saved' as const,
+          suggestion: '本关作答已保存，整单提交后进入评审。',
+        }
+      : null)
+  reviewVisible.value = true
 }
 
 function goNext(): void {
@@ -206,15 +333,14 @@ function goNext(): void {
 }
 
 watch(
-  [answers, files],
+  [answers],
   () => {
     const module = activeModule.value
-    if (!module || activeGate.value === 'locked') return
+    if (!module || hydrating.value || activeGate.value === 'locked' || readOnly.value) return
     window.clearTimeout(draftTimer)
     draftTimer = window.setTimeout(() => {
       projectStore.saveDraft(projectId.value, module.id, {
         textAnswers: answers.value,
-        files: files.value,
       })
     }, 700)
   },
@@ -224,10 +350,10 @@ watch(
 onMounted(async () => {
   chat.contextLabel = '关卡详情 · 逐关提交实训成果'
   await Promise.all([projectStore.load(), positionStore.load()])
-  const current = project.value
+  const current = project.value ?? (await projectStore.loadProject(projectId.value))
   if (current) {
-    await projectStore.loadDetail(current.id)
-    chat.contextLabel = `《${current.name}》实训 · 逐关提交与 AI 判分`
+    await projectStore.loadWork(current.id)
+    chat.contextLabel = `《${current.name}》实训 · 逐关提交`
     const currentState = projectStore.currentModule(current)
     if (currentState) {
       activeModuleId.value = currentState.module.id
@@ -242,7 +368,6 @@ onUnmounted(() => {
   if (module) {
     projectStore.saveDraft(projectId.value, module.id, {
       textAnswers: answers.value,
-      files: files.value,
     })
   }
 })
@@ -268,12 +393,22 @@ onUnmounted(() => {
         <span class="topbar__score-label">得分</span>
         <span class="topbar__score-value num">{{ project.score ?? '—' }}</span>
       </div>
+      <div class="topbar__actions">
+        <el-button v-if="work?.status === 'COMPLETED'" round @click="startWork">重新挑战</el-button>
+        <el-button v-if="work?.status === 'SUBMITTED'" round @click="withdraw">撤回提交</el-button>
+      </div>
     </header>
 
     <!-- 步骤条 -->
     <section class="stepper panel">
       <LevelStepper :states="states" :active-id="activeModuleId" @select="selectModule" />
     </section>
+
+    <!-- 提交 / 评审状态 -->
+    <div v-if="statusBanner" class="statusbar" :class="`statusbar--${statusBanner.tone}`">
+      <span class="statusbar__dot" aria-hidden="true" />
+      {{ statusBanner.text }}
+    </div>
 
     <div class="body">
       <!-- 左侧栏 -->
@@ -306,6 +441,38 @@ onUnmounted(() => {
               <li v-for="item in activeModule.criteria" :key="item">
                 <span class="criteria__dot" />
                 {{ item }}
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 项目资料：教师端上传的报告模板 / 数据文件 -->
+        <section v-if="project.files.length" class="panel side-block">
+          <header class="panel-head">
+            <div class="panel-head__title">
+              <span class="panel-title-mark" />
+              项目资料
+            </div>
+            <span class="side__hint num">{{ project.files.length }}</span>
+          </header>
+          <div class="panel-body">
+            <ul class="materials">
+              <li v-for="file in project.files" :key="file.id" class="material">
+                <span class="material__icon" aria-hidden="true">{{ fileIcon(file.fileKind) }}</span>
+                <span class="material__main">
+                  <span class="material__title">{{ file.title }}</span>
+                  <span class="material__meta">
+                    {{ fileKindLabel[file.fileKind] }} · {{ formatFileSize(file.sizeBytes) }}
+                  </span>
+                </span>
+                <a
+                  class="material__action"
+                  :href="file.downloadUrl"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  下载
+                </a>
               </li>
             </ul>
           </div>
@@ -362,7 +529,17 @@ onUnmounted(() => {
 
       <!-- 右侧作答区 -->
       <main class="work">
-        <div v-if="!activeModule" class="panel">
+        <div v-if="notStarted" class="panel">
+          <EmptyState
+            icon="🚩"
+            title="还没有开始这个项目"
+            description="点击「开始闯关」后系统会为你建立本轮实训记录；之后逐关保存作答，全部关卡完成后自动整单提交。"
+            action-text="开始闯关"
+            @action="startWork"
+          />
+        </div>
+
+        <div v-else-if="!activeModule" class="panel">
           <EmptyState icon="🔒" title="该项目暂未解锁" :description="project.lockReason ?? '完成前置项目即可解锁'" />
         </div>
 
@@ -401,7 +578,7 @@ onUnmounted(() => {
                 show-word-limit
                 resize="none"
                 :placeholder="question.placeholder"
-                :disabled="activeGate === 'done'"
+                :disabled="readOnly || activeGate === 'done'"
               />
               <p v-if="question.hint" class="question__hint">{{ question.hint }}</p>
             </article>
@@ -412,18 +589,36 @@ onUnmounted(() => {
                 <span class="question__hint-inline">支持文本 / 图片 / PDF，单个 ≤ 50MB</span>
               </p>
               <el-upload
-                v-if="activeGate !== 'done'"
+                v-if="activeGate !== 'done' && !readOnly"
                 drag
                 multiple
                 :auto-upload="false"
+                :disabled="Boolean(Object.keys(uploading).length)"
                 :show-file-list="false"
                 :on-change="handleUploadChange"
               >
                 <el-icon class="upload__icon"><UploadFilled /></el-icon>
                 <p class="upload__text">把文件拖到这里，或<em>点击选择文件</em></p>
-                <p class="upload__hint">建议上传关键过程截图、测试数据表与实训报告</p>
+                <p class="upload__hint">
+                  选好即上传到服务器并挂在本关，建议传关键过程截图、测试数据表与实训报告
+                </p>
               </el-upload>
 
+              <!-- 正在上传 -->
+              <ul v-if="Object.keys(uploading).length" class="filelist">
+                <li v-for="(percent, name) in uploading" :key="name" class="file">
+                  <span class="file__icon" aria-hidden="true">⏳</span>
+                  <span class="file__main">
+                    <span class="file__name">{{ name }}</span>
+                    <span class="file__meta num">上传中 {{ percent }}%</span>
+                  </span>
+                  <span class="file__progress">
+                    <el-progress :percentage="percent" :stroke-width="4" :show-text="false" />
+                  </span>
+                </li>
+              </ul>
+
+              <!-- 已挂在本关的附件（存在服务器上） -->
               <ul v-if="files.length" class="filelist">
                 <li v-for="file in files" :key="file.id" class="file">
                   <span class="file__icon" aria-hidden="true">📎</span>
@@ -431,41 +626,48 @@ onUnmounted(() => {
                     <span class="file__name">{{ file.name }}</span>
                     <span class="file__meta num">{{ formatFileSize(file.size) }}</span>
                   </span>
-                  <span class="file__progress">
-                    <el-progress
-                      :percentage="progress[file.id] ?? 100"
-                      :stroke-width="4"
-                      :show-text="false"
-                      :status="(progress[file.id] ?? 100) >= 100 ? 'success' : ''"
-                    />
-                  </span>
+                  <a
+                    v-if="file.url"
+                    class="file__download"
+                    :href="file.url"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    下载
+                  </a>
                   <button
-                    v-if="activeGate !== 'done'"
+                    v-if="activeGate !== 'done' && !readOnly"
                     class="file__remove"
                     type="button"
-                    title="删除"
+                    title="移除"
                     @click="removeFile(file.id)"
                   >
                     <el-icon><Delete /></el-icon>
                   </button>
                 </li>
               </ul>
+
+              <p v-if="!files.length && !Object.keys(uploading).length" class="upload__empty">
+                {{ activeGate === 'done' || readOnly ? '本关没有上传附件' : '还没有上传附件' }}
+              </p>
             </section>
 
-            <div v-if="missingFields.length" class="work__warn">
+            <div v-if="missingFields.length && !readOnly && !notStarted" class="work__warn">
               还差 {{ missingFields.length }} 项必填内容：{{ missingFields.join('、') }}
             </div>
           </div>
 
           <footer class="work__foot">
-            <el-button round @click="saveDraft">保存草稿</el-button>
+            <el-button round :disabled="readOnly || notStarted" @click="saveCurrent">
+              保存本关
+            </el-button>
             <el-button
               v-if="activeGate === 'done'"
               type="primary"
               round
-              @click="reviewVisible = true"
+              @click="openLastReview"
             >
-              查看上次评判
+              查看评判结果
             </el-button>
             <el-button type="primary" round :disabled="!canSubmit" :loading="reviewing" @click="submit">
               提交本关
@@ -479,15 +681,15 @@ onUnmounted(() => {
     <el-dialog v-model="reviewVisible" width="640px" align-center :show-close="!reviewing">
       <template #header>
         <div class="review-dialog__head">
-          <span class="review-dialog__title">AI 自动评判结果</span>
+          <span class="review-dialog__title">{{ dialogTitle }}</span>
           <span class="review-dialog__sub">{{ project.name }} · {{ reviewModuleName }}</span>
         </div>
       </template>
 
       <div v-if="reviewing" class="judging">
         <span class="judging__ring" aria-hidden="true" />
-        <p class="judging__title">AI 正在评判你的作答…</p>
-        <p class="judging__desc">正在比对验收标准与评分维度，通常需要 1–2 秒</p>
+        <p class="judging__title">正在提交你的作答…</p>
+        <p class="judging__desc">作答会保存到服务器，必填关卡全部完成后自动整单提交</p>
       </div>
 
       <AiReviewPanel
@@ -497,7 +699,7 @@ onUnmounted(() => {
         :project-name="project.name"
         @back="goNext"
         @recheck="applyRecheck"
-        @simulate="simulateRecheck"
+        @withdraw="withdraw"
       />
     </el-dialog>
   </div>
@@ -1062,5 +1264,117 @@ onUnmounted(() => {
   .body {
     grid-template-columns: 280px minmax(0, 1fr);
   }
+}
+
+/* —— 重新挑战 / 撤回提交 —— */
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* —— 提交 / 评审状态条 —— */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13px;
+  box-shadow: var(--sh-1);
+}
+
+.statusbar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wip);
+}
+
+.statusbar--done {
+  border-color: var(--ok-line, var(--line));
+  background: var(--ok-bg, var(--surface));
+}
+
+.statusbar--done .statusbar__dot {
+  background: var(--ok);
+}
+
+/* —— 项目资料（教师端上传的模板/数据文件） —— */
+.materials {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.material {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.material__icon {
+  font-size: 18px;
+}
+
+.material__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.material__title {
+  overflow: hidden;
+  color: var(--ink-1);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material__meta {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+.material__action {
+  margin-left: auto;
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--brand-100);
+  border-radius: var(--r-pill);
+  background: var(--brand-050);
+  color: var(--brand-600);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.material__action:hover {
+  border-color: var(--brand-300);
+}
+
+/* —— 附件：下载链接与空态 —— */
+.file__download {
+  flex: none;
+  color: var(--brand-600);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.upload__empty {
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 </style>

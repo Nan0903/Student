@@ -61,6 +61,7 @@ function onClick(): void {
       <p class="project-card__foot">
         <template v-if="locked">{{ project.lockReason ?? '完成更多基础项目即可解锁' }}</template>
         <template v-else-if="project.status === 'completed'">点击回看历史记录与教师点评</template>
+        <template v-else-if="project.status === 'submitted'">已整单提交，等待评审结果</template>
         <template v-else-if="project.status === 'in_progress'">继续第 {{ project.levelDone + 1 }} 关</template>
         <template v-else>开始第一关</template>
       </p>

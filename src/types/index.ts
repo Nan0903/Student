@@ -72,7 +72,8 @@ export interface Position {
 /* 技能树                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type SkillSystemId = 'optical' | 'algorithm' | 'deeplearning' | 'deployment'
+/** 技能体系 ID：由后端 skill_tree 主键决定，不再是固定枚举（教师端可新增体系） */
+export type SkillSystemId = string
 
 export type SkillNodeStatus = 'locked' | 'active' | 'mastered'
 
@@ -82,7 +83,7 @@ export interface SkillNode {
   systemId: SkillSystemId
   icon: string
   status: SkillNodeStatus
-  /** 点亮进度，如 2/3；total 为 1 时表示一次性点亮 */
+  /** 点亮进度；接入真实数据后 current/total 即「进度百分比」，如 50/100 */
   progress: { current: number; total: number }
   /** 简要解锁说明 */
   description: string
@@ -110,7 +111,8 @@ export interface SkillTreeStats {
 /* -------------------------------------------------------------------------- */
 
 export type ProjectTier = 'basic' | 'advanced' | 'extended'
-export type ProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'locked'
+/** submitted = 已整单提交、等待评审（后端 student_project.status = SUBMITTED） */
+export type ProjectStatus = 'not_started' | 'in_progress' | 'submitted' | 'completed' | 'locked'
 export type ModuleStatus = 'draft' | 'submitted' | 'passed' | 'rejected'
 
 export interface TrainModule {
@@ -172,6 +174,24 @@ export interface Project {
   /** 项目引导语 */
   intro: string
   modules: TrainModule[]
+  /** 项目资料（报告模板 / 数据文件 / 说明文档），由教师端上传 */
+  files: ProjectFile[]
+}
+
+/** 项目附件用途 */
+export type ProjectFileKind = 'REPORT_TEMPLATE' | 'DATASET' | 'GUIDE' | 'OTHER'
+
+export interface ProjectFile {
+  id: string
+  fileKind: ProjectFileKind
+  /** 展示名称，教师没填时用文件名 */
+  title: string
+  originalName: string
+  contentType: string
+  sizeBytes: number
+  /** 可直接访问的下载地址 */
+  downloadUrl: string
+  remark?: string
 }
 
 /* -------------------------------------------------------------------------- */
@@ -185,18 +205,30 @@ export interface AiReviewDimension {
   passed: boolean
 }
 
-export type AiReviewStatus = 'passed' | 'pending_recheck' | 'rechecked'
+/**
+ * 判分/评审状态：
+ * - saved：本关作答已保存（整单还没交，AI 判分未接入）
+ * - pending：整单已提交，等待评审
+ * - passed / failed：AI 评审已出结论
+ * - pending_recheck：学生已提异议，等教师复核
+ * - rechecked：教师已复审
+ */
+export type AiReviewStatus = 'saved' | 'pending' | 'passed' | 'failed' | 'pending_recheck' | 'rechecked'
 
 export interface AiReview {
-  totalScore: number
+  totalScore?: number
   /** 优秀 / 良好 / 合格 */
-  grade: string
+  grade?: string
   dimensions: AiReviewDimension[]
-  suggestion: string
+  suggestion?: string
   reviewStatus: AiReviewStatus
   /** 教师复审结果 */
   teacherScore?: number
   teacherComment?: string
+  /** 整单提交状态（后端 project_submission.status） */
+  submissionStatus?: SubmissionStatus
+  /** 提交记录 ID，撤回与提异议用 */
+  submissionId?: string
 }
 
 export interface ModuleSubmission {
@@ -222,7 +254,8 @@ export interface HistoryRecord {
   moduleName: string
   at: string
   summary: string
-  score: number
+  /** 该轮整单得分；还没出评审结果时为空 */
+  score?: number
 }
 
 export interface TeacherComment {
@@ -232,6 +265,62 @@ export interface TeacherComment {
   at: string
   content: string
   moduleName: string
+}
+
+/* -------------------------------------------------------------------------- */
+/* 闯关（对接后端后新增）                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** 整单提交状态（project_submission.status） */
+export type SubmissionStatus =
+  | 'PENDING_AI'
+  | 'AI_PASSED'
+  | 'AI_FAILED'
+  | 'PENDING_REVIEW'
+  | 'REVIEWING'
+  | 'REVIEWED'
+  | 'WITHDRAWN'
+
+/** 某一关的作答（attempt_stage） */
+export interface StageAnswer {
+  /** attempt_stage.id：保存作答用 */
+  stageId: string
+  /** project_module.id：与 TrainModule.id 一致 */
+  moduleId: string
+  order: number
+  name: string
+  required: boolean
+  weight: number
+  isFilled: boolean
+  /** 后端只有这一个文本字段，多题作答按「【标题】+ 内容」拼在里面，见 utils/answer.ts */
+  answerText: string
+  /** 本关的填写引导子标题（教师手填） */
+  items: StageGuideItem[]
+  /** 本关作答最后填写时间（后端 attempt_stage.filled_at） */
+  filledAt?: string
+  fileCount: number
+}
+
+/** 关卡填写引导子标题（project_module.items_json） */
+export interface StageGuideItem {
+  title: string
+  prompt: string
+}
+
+/** 一轮闯关 + 提交 + 评审的完整上下文 */
+export interface ProjectWork {
+  projectId: string
+  /** NONE = 还没开始闯关 */
+  status: 'NONE' | 'IN_PROGRESS' | 'SUBMITTED' | 'COMPLETED' | 'ABANDONED'
+  attemptId: string | null
+  attemptNo: number
+  stages: StageAnswer[]
+  submissionId: string | null
+  submissionStatus: SubmissionStatus | null
+  objection: string | null
+  review: AiReview | null
+  history: HistoryRecord[]
+  comments: TeacherComment[]
 }
 
 /* -------------------------------------------------------------------------- */
@@ -314,4 +403,3 @@ export interface NavItem {
   /** 左侧栏分组标题 */
   group?: string
 }
-

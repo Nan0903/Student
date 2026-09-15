@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import gateImage from '@/assets/images/gate.jpg'
 import logoImage from '@/assets/images/logo.png'
-import { mockLogin } from '@/api/auth'
+import { loginAsTeacher } from '@/api/auth'
 import { platformInfo } from '@/config/nav'
 import { useUserStore } from '@/stores/user'
 
@@ -34,7 +34,7 @@ async function enterTeacher(): Promise<void> {
   if (pending.value) return
   pending.value = 'teacher'
   try {
-    const result = await mockLogin('teacher')
+    const result = await loginAsTeacher()
     if (result.role === 'teacher') {
       ElMessage.warning('教师端功能暂未开放，请使用教师端登录')
     }
