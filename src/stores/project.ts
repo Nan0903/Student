@@ -69,6 +69,19 @@ export const useProjectStore = defineStore('project', () => {
     return byId.value.get(projectId) ?? null
   }
 
+  /**
+   * 项目已通过的关卡数。
+   *
+   * 技能点进度口径按「项目完成度 = 已通过关卡 / 关卡总数」算（见 stores/skill.ts），
+   * 后端没有逐关判分，所以这里以「已填写完成的关卡数」为准，整单提交/已完成按满关计。
+   */
+  function passedOf(projectId: string): number {
+    const project = byId.value.get(projectId)
+    if (!project) return 0
+    if (project.status === 'completed' || project.status === 'submitted') return project.levelTotal
+    return project.levelDone
+  }
+
   function getWork(projectId: string): ProjectWork | null {
     return works.value[projectId] ?? null
   }
@@ -336,6 +349,7 @@ export const useProjectStore = defineStore('project', () => {
     history,
     comments,
     getProject,
+    passedOf,
     getWork,
     moduleStates,
     currentModule,

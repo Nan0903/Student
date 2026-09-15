@@ -160,31 +160,9 @@ const TIER_BY_LEVEL: Record<string, Project['tier']> = {
   EXPANDED: 'extended',
 }
 
-/** 项目图标：后端没有图标字段，按项目名关键字兜底，再退化到层级图标 */
-const PROJECT_ICONS: [string, string][] = [
-  ['划痕', '🪟'],
-  ['金属', '🔩'],
-  ['药片', '💊'],
-  ['反光', '⚙️'],
-  ['字符', '🔤'],
-  ['PCB', '🟩'],
-  ['相机', '🎥'],
-  ['小样本', '🧬'],
-  ['部署', '🏭'],
-  ['成像', '🔭'],
-  ['分类', '🗂️'],
-  ['缺陷', '🔍'],
-]
-
-const LEVEL_ICONS: Record<string, string> = {
-  BASIC: '🧱',
-  ADVANCED: '🚀',
-  EXPANDED: '🏭',
-}
-
-function projectIcon(level: string, name: string): string {
-  const hit = PROJECT_ICONS.find(([keyword]) => name.includes(keyword))
-  return hit?.[1] ?? LEVEL_ICONS[level] ?? '📘'
+/** 项目挂靠的技能点（后端：/projects/{id}/skills） */
+interface BackendProjectSkillRef {
+  id: number
 }
 
 function toProjectStatus(status: string): ProjectStatus {
@@ -283,6 +261,7 @@ function toProject(
   detail: BackendProjectDetail,
   templateDescriptions: Map<string, string>,
   record: BackendStudentProjectDetail | null,
+  skillIds: string[],
 ): Project {
   const modules = detail.modules
     .slice()
@@ -303,8 +282,8 @@ function toProject(
     id: String(detail.id),
     name: detail.project_name,
     tier: TIER_BY_LEVEL[detail.project_level] ?? 'basic',
-    icon: projectIcon(detail.project_level, detail.project_name),
     positionId: detail.job_id === null ? '' : String(detail.job_id),
+    skillIds,
     status: record ? toProjectStatus(record.status) : 'not_started',
     levelTotal,
     levelDone,
@@ -483,15 +462,21 @@ export async function fetchProjects(): Promise<Project[]> {
   const templateDescriptions = new Map(
     templates.items.map((item) => [item.stage_key, item.description ?? '']),
   )
-  const details = await Promise.all(
-    list.items.map((project) => get<BackendProjectDetail>(`/projects/${project.id}`)),
-  )
+  const [details, skillLists] = await Promise.all([
+    Promise.all(list.items.map((project) => get<BackendProjectDetail>(`/projects/${project.id}`))),
+    Promise.all(
+      list.items.map((project) =>
+        get<BackendProjectSkillRef[]>(`/projects/${project.id}/skills`),
+      ),
+    ),
+  ])
 
-  return details.map((detail) =>
+  return details.map((detail, index) =>
     toProject(
       detail,
       templateDescriptions,
       records.find((record) => record.project_id === detail.id) ?? null,
+      (skillLists[index] ?? []).map((node) => String(node.id)),
     ),
   )
 }
