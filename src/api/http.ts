@@ -133,6 +133,10 @@ export function patch<T>(path: string, options: Omit<RequestOptions, 'method'> =
   return request<T>(path, { ...options, method: 'PATCH' })
 }
 
+export function put<T>(path: string, options: Omit<RequestOptions, 'method'> = {}): Promise<T> {
+  return request<T>(path, { ...options, method: 'PUT' })
+}
+
 export function del<T>(path: string, options: Omit<RequestOptions, 'method'> = {}): Promise<T> {
   return request<T>(path, { ...options, method: 'DELETE' })
 }

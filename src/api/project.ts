@@ -12,10 +12,10 @@
  * 前端如实展示状态，不编造分数。
  */
 
-import { answerSummary, questionId } from '@/utils/answer'
+import { questionId } from '@/utils/answer'
 import { formatDateTime } from '@/utils/format'
 import { resolveApiPath } from './file'
-import { get, patch, post, toNumber, type Page } from './http'
+import { get, post, put, toNumber, type Page } from './http'
 import { requireStudentId } from './session'
 import type {
   AiReview,
@@ -133,21 +133,111 @@ interface BackendSubmission {
   objection_reason: string | null
 }
 
-interface BackendReview {
-  id: number
+/** ---------- 学生项目详情（GET /students/{id}/projects/{pid}） ---------- */
+
+interface BackendLevelDetail {
+  project_module_id: number
+  attempt_stage_id: number | null
+  stage_no: number
+  stage_key: string | null
+  stage_name: string
+  description: string | null
+  requirement: string | null
+  accept_standard: string | null
+  weight: string | number
+  required: boolean
+  sub_titles: BackendItemsJson[] | null
+  is_filled: boolean
+  filled_at: string | null
+  answer_text: string | null
+  answer_saved_at: string | null
+  file_count: number
+}
+
+interface BackendReviewHistory {
+  review_id: number
   review_kind: string
-  status: string
   reviewer_id: number | null
+  reviewer_name: string | null
+  status: string
+  version_no: number
   total_score: string | number | null
+  conclusion: string | null
   comment: string | null
-  dimension_json: {
-    name: string
+  dimensions: {
+    name?: string | null
     score?: string | number | null
     weight?: string | number | null
     reason?: string | null
   }[]
-  finished_at: string | null
   created_at: string
+  finished_at: string | null
+}
+
+interface BackendSubmissionHistory {
+  submission_id: number
+  attempt_no: number
+  submit_no: number
+  status: string
+  final_conclusion: string | null
+  total_score: string | number | null
+  submitted_at: string
+  reviewed_at: string | null
+  objection_reason: string | null
+  is_starred: boolean
+  reviews: BackendReviewHistory[]
+}
+
+interface BackendStudentProjectDetailFull {
+  student_id: number
+  project_id: number
+  project_name: string
+  project_level: string
+  intro: string | null
+  job_id: number | null
+  job_name: string | null
+  status: string
+  best_score: string | number | null
+  total_score: string | number | null
+  progress: string | number
+  level_total: number
+  level_done: number
+  attempt_count: number
+  current_attempt_id: number | null
+  current_attempt_no: number | null
+  submission_count: number
+  levels: BackendLevelDetail[]
+  submissions: BackendSubmissionHistory[]
+}
+
+/** 保存作答的返回（PUT /attempts/{id}/answers） */
+interface BackendSaveAnswersResult {
+  attempt_id: number
+  attempt_no: number
+  saved_count: number
+  filled_stage_count: number
+  stage_total: number
+  progress: string | number
+}
+
+/** AI 评审结果（POST /submissions/{id}/ai-review） */
+interface BackendAiReviewOut {
+  review: {
+    id: number
+    total_score: string | number | null
+    conclusion: string | null
+    comment: string | null
+    status: string
+    dimension_json: {
+      name?: string | null
+      score?: string | number | null
+      reason?: string | null
+    }[]
+  }
+  criteria_doc_ids: number[]
+  recalled_chunks: number
+  model: string
+  warnings: string[]
 }
 
 /* -------------------------------------------------------------------------- */
@@ -304,13 +394,9 @@ function toProject(
   }
 }
 
-function buildAiReview(
-  submission: BackendSubmission | null,
-  reviews: BackendReview[],
-): AiReview | null {
-  if (!submission) return null
-
-  const finalReviews = reviews.filter((item) => item.status === 'FINAL')
+/** 一次提交记录 → 判分面板要的 AiReview */
+function toAiReview(submission: BackendSubmissionHistory): AiReview {
+  const finalReviews = submission.reviews.filter((item) => item.status === 'FINAL')
   const aiReview = finalReviews.find((item) => item.review_kind === 'AI') ?? null
   const teacherReview = finalReviews.find((item) => item.review_kind === 'TEACHER') ?? null
   const rawScore = toNumber(
@@ -319,126 +405,106 @@ function buildAiReview(
   )
   const totalScore = Number.isFinite(rawScore) ? Math.round(rawScore) : undefined
   const dimensionSource =
-    teacherReview && teacherReview.dimension_json.length > 0
-      ? teacherReview.dimension_json
-      : (aiReview?.dimension_json ?? [])
+    teacherReview && teacherReview.dimensions.length > 0
+      ? teacherReview.dimensions
+      : (aiReview?.dimensions ?? [])
   const dimensions: AiReviewDimension[] = dimensionSource.map((item) => {
     const score = Math.round(toNumber(item.score, 0))
-    return { name: item.name, score, reason: item.reason ?? '', passed: score >= 60 }
+    return { name: item.name ?? '评分项', score, reason: item.reason ?? '', passed: score >= 60 }
   })
 
   return {
     totalScore,
     grade: totalScore === undefined ? undefined : gradeOf(totalScore),
     dimensions,
-    // 教师复审的评语单独展示，这里只放 AI 初审意见，避免同一段话出现两遍
+    // 教师复审的评语由面板单独展示，这里只放 AI 初审意见，避免同一段话出现两遍
     suggestion: aiReview?.comment ?? undefined,
     reviewStatus: toReviewStatus(submission.status),
     teacherScore: teacherReview ? Math.round(toNumber(teacherReview.total_score, 0)) : undefined,
     teacherComment: teacherReview?.comment ?? undefined,
     submissionStatus: submission.status as SubmissionStatus,
-    submissionId: String(submission.id),
+    submissionId: String(submission.submission_id),
   }
 }
 
-async function buildWork(
-  projectId: string,
-  record: BackendStudentProjectDetail | null,
-): Promise<ProjectWork> {
-  const latest = latestAttempt(record)
-  if (!record || !latest) {
+/** 学生项目详情 → 页面要的闯关上下文（一个接口拿全，不再拼多次请求） */
+function buildWork(projectId: string, detail: BackendStudentProjectDetailFull): ProjectWork {
+  const stages: StageAnswer[] = [...(detail.levels ?? [])]
+    .sort((left, right) => left.stage_no - right.stage_no)
+    .map((level) => ({
+      stageId: level.attempt_stage_id === null ? '' : String(level.attempt_stage_id),
+      moduleId: String(level.project_module_id),
+      order: level.stage_no,
+      name: level.stage_name,
+      required: level.required,
+      weight: toNumber(level.weight),
+      isFilled: level.is_filled,
+      answerText: level.answer_text ?? '',
+      items: (level.sub_titles ?? []).map((item) => ({
+        title: item.title,
+        prompt: item.prompt ?? '',
+      })),
+      filledAt: level.filled_at ?? level.answer_saved_at ?? undefined,
+      fileCount: level.file_count,
+    }))
+
+  // 提交历史：后端按时间倒序返回，这里再兜一次排序
+  const submissions = [...(detail.submissions ?? [])].sort((left, right) =>
+    left.submitted_at < right.submitted_at ? 1 : -1,
+  )
+  const latest = submissions[0] ?? null
+
+  const history: HistoryRecord[] = submissions.map((item) => {
+    const score = item.total_score === null ? undefined : Math.round(toNumber(item.total_score))
+    const conclusion =
+      item.final_conclusion === 'PASS'
+        ? '通过'
+        : item.final_conclusion === 'FAIL'
+          ? '未通过'
+          : '待评审'
     return {
-      projectId,
-      status: 'NONE',
-      attemptId: null,
-      attemptNo: 0,
-      stages: [],
-      submissionId: null,
-      submissionStatus: null,
-      objection: null,
-      review: null,
-      history: [],
-      comments: [],
+      id: `s-${item.submission_id}`,
+      moduleId: '',
+      moduleName: `第 ${item.attempt_no} 轮 · 第 ${item.submit_no} 次提交`,
+      at: formatDateTime(item.submitted_at),
+      summary: score === undefined ? conclusion : `${conclusion} · ${score} 分`,
+      score,
+    }
+  })
+
+  // 教师点评：取每次提交上的教师复审评语（AI 评语在判分面板里显示）
+  const comments: TeacherComment[] = []
+  for (const submission of submissions) {
+    for (const review of submission.reviews) {
+      if (review.review_kind === 'AI' || !review.comment) continue
+      comments.push({
+        id: `c-${review.review_id}`,
+        moduleId: '',
+        teacher: review.reviewer_name ?? '任课教师',
+        at: formatDateTime(review.finished_at ?? review.created_at),
+        content: review.comment,
+        moduleName: `第 ${submission.attempt_no} 轮 · 第 ${submission.submit_no} 次`,
+      })
     }
   }
 
-  const studentId = requireStudentId()
-  const detail = await get<BackendAttemptDetail>(`/attempts/${latest.id}`)
-  const submissions = await get<Page<BackendSubmission>>('/submissions', {
-    query: { student_id: studentId, project_id: projectId, page_size: 200 },
-  })
-  const submission = submissions.items.find((item) => item.attempt_id === detail.id) ?? null
-  const reviews = submission
-    ? await get<BackendReview[]>(`/submissions/${submission.id}/reviews`)
-    : []
-
-  const stages: StageAnswer[] = detail.stages
-    .slice()
-    .sort((left, right) => left.stage_no - right.stage_no)
-    .map((stage) => ({
-      stageId: String(stage.id),
-      moduleId: String(stage.project_module_id),
-      order: stage.stage_no,
-      name: stage.stage_name ?? `第 ${stage.stage_no} 关`,
-      required: stage.required,
-      weight: toNumber(stage.weight),
-      isFilled: stage.is_filled,
-      answerText: stage.answer_text ?? '',
-      items: guideItems(stage.items_json),
-      filledAt: stage.filled_at ?? undefined,
-      fileCount: stage.file_count,
-    }))
-
-  const totalScore = submission ? Math.round(toNumber(submission.total_score, 0)) : 0
-
-  const history: HistoryRecord[] = stages
-    .filter((stage) => stage.isFilled)
-    .map((stage) => ({
-      id: `h-${stage.stageId}`,
-      moduleId: stage.moduleId,
-      moduleName: stage.name,
-      at: stage.filledAt ? formatDateTime(stage.filledAt) : '',
-      summary: answerSummary(stage.answerText) || '已提交作答',
-      score: totalScore > 0 ? totalScore : undefined,
-    }))
-
-  // 教师点评：后端只有整单评审的评语，没有逐关点评
-  const finalReviews = reviews.filter((item) => item.status === 'FINAL')
-  const reviewerIds = [
-    ...new Set(
-      finalReviews
-        .map((item) => item.reviewer_id)
-        .filter((id): id is number => typeof id === 'number'),
-    ),
-  ]
-  const reviewerNames = new Map<number, string>()
-  await Promise.all(
-    reviewerIds.map(async (id) => {
-      const user = await get<{ id: number; real_name: string }>(`/users/${id}`)
-      reviewerNames.set(id, user.real_name)
-    }),
-  )
-  const comments: TeacherComment[] = finalReviews
-    .filter((item) => item.review_kind !== 'AI' && Boolean(item.comment))
-    .map((item) => ({
-      id: `c-${item.id}`,
-      moduleId: '',
-      teacher: item.reviewer_id ? (reviewerNames.get(item.reviewer_id) ?? '任课教师') : '任课教师',
-      at: formatDateTime(item.finished_at ?? item.created_at),
-      content: item.comment ?? '',
-      moduleName: '整单复审',
-    }))
+  const status: ProjectWork['status'] =
+    detail.current_attempt_id === null
+      ? 'NONE'
+      : detail.status === 'NOT_STARTED'
+        ? 'IN_PROGRESS'
+        : (detail.status as ProjectWork['status'])
 
   return {
     projectId,
-    status: detail.status as ProjectWork['status'],
-    attemptId: String(detail.id),
-    attemptNo: detail.attempt_no,
+    status,
+    attemptId: detail.current_attempt_id === null ? null : String(detail.current_attempt_id),
+    attemptNo: detail.current_attempt_no ?? 0,
     stages,
-    submissionId: submission ? String(submission.id) : null,
-    submissionStatus: submission ? (submission.status as SubmissionStatus) : null,
-    objection: submission?.objection_reason ?? null,
-    review: buildAiReview(submission, reviews),
+    submissionId: latest ? String(latest.submission_id) : null,
+    submissionStatus: latest ? (latest.status as SubmissionStatus) : null,
+    objection: latest?.objection_reason ?? null,
+    review: latest ? toAiReview(latest) : null,
     history,
     comments,
   }
@@ -486,12 +552,18 @@ export async function fetchProject(projectId: string): Promise<Project | null> {
   return projects.find((item) => item.id === projectId) ?? null
 }
 
-/** 读取某个项目的闯关上下文（轮次、作答、提交、评审、历史、点评） */
+/**
+ * 读取某个项目的闯关上下文。
+ *
+ * 用后端的学生项目详情接口一次拿全：任务简介、关卡与子标题、每关作答与附件数、
+ * 提交历史与每次提交上的 AI / 教师评语。
+ */
 export async function loadWork(projectId: string): Promise<ProjectWork> {
   const studentId = requireStudentId()
-  const records = await get<BackendStudentProjectDetail[]>(`/students/${studentId}/projects`)
-  const record = records.find((item) => String(item.project_id) === projectId) ?? null
-  return buildWork(projectId, record)
+  const detail = await get<BackendStudentProjectDetailFull>(
+    `/students/${studentId}/projects/${projectId}`,
+  )
+  return buildWork(projectId, detail)
 }
 
 /** 开始（或重新挑战）一个项目：后端会新建一轮，并在每关预建作答行 */
@@ -501,16 +573,55 @@ export async function startWork(projectId: string): Promise<ProjectWork> {
   return loadWork(projectId)
 }
 
-/** 保存某一关的作答（整单提交后不能再改，后端会拦） */
+/**
+ * 保存作答（一次可存多个关卡）。
+ *
+ * 后端语义：只更新 body 里带到的关卡，默认只存文本、**不改关卡完成状态**；
+ * 想把某关标记为完成，在该条目上传 `isFilled: true`。
+ */
+export async function saveAnswers(
+  attemptId: string,
+  items: { stageId: string; answerText: string; isFilled: boolean }[],
+): Promise<BackendSaveAnswersResult> {
+  return put<BackendSaveAnswersResult>(`/attempts/${attemptId}/answers`, {
+    body: {
+      answers: items
+        .filter((item) => item.stageId)
+        .map((item) => ({
+          attempt_stage_id: Number(item.stageId),
+          answer_text: item.answerText,
+          is_filled: item.isFilled,
+        })),
+    },
+  })
+}
+
+/** 保存某一关的作答（单关场景，内部走批量接口） */
 export async function saveStageAnswer(params: {
   attemptId: string
   stageId: string
   answerText: string
   isFilled: boolean
 }): Promise<void> {
-  await patch(`/attempts/${params.attemptId}/stages/${params.stageId}`, {
-    body: { answer_text: params.answerText, is_filled: params.isFilled },
-  })
+  await saveAnswers(params.attemptId, [
+    { stageId: params.stageId, answerText: params.answerText, isFilled: params.isFilled },
+  ])
+}
+
+/**
+ * 触发 AI 评审：后端召回本项目评分标准 → 大模型打分 → 落库并结算
+ * （分数过线则项目完成、技能进度重算）。
+ */
+export async function runAiReview(
+  submissionId: string,
+): Promise<{ score?: number; model: string; warnings: string[] }> {
+  const outcome = await post<BackendAiReviewOut>(`/submissions/${submissionId}/ai-review`)
+  const raw = toNumber(outcome.review?.total_score ?? null, Number.NaN)
+  return {
+    score: Number.isFinite(raw) ? Math.round(raw) : undefined,
+    model: outcome.model,
+    warnings: outcome.warnings ?? [],
+  }
 }
 
 /** 整单提交：返回提交记录 ID 与状态 */

@@ -5,6 +5,8 @@ import {
   fetchProjects,
   loadWork as loadWorkApi,
   raiseObjection,
+  runAiReview,
+  saveAnswers,
   saveStageAnswer,
   startWork as startWorkApi,
   submitWork as submitWorkApi,
@@ -279,19 +281,41 @@ export const useProjectStore = defineStore('project', () => {
   /** 其余关卡的本地草稿一起落库，避免学生忘了点保存导致整单提交失败 */
   async function flushDrafts(projectId: string): Promise<void> {
     const project = byId.value.get(projectId)
-    if (!project) return
+    const work = works.value[projectId]
+    if (!project || !work?.attemptId || work.status !== 'IN_PROGRESS') return
+
+    // 一次请求把所有有内容的草稿一起存掉（后端支持批量保存）
+    const payload: {
+      moduleId: string
+      stageId: string
+      answerText: string
+      isFilled: boolean
+    }[] = []
     for (const module of project.modules) {
       const draft = drafts.value[draftKey(projectId, module.id)]
       if (!draft) continue
       const hasContent = Object.values(draft.textAnswers).some((value) => value.trim().length > 0)
       if (!hasContent) continue
-      try {
-        await saveStage(projectId, module.id)
-      } catch (error) {
-        // 已提交的轮次不允许改：忽略这一关，交给整单提交去校验
-        if (!(error instanceof ApiError) || error.code !== 409) throw error
-      }
+      const stage = work.stages.find((item) => item.moduleId === module.id)
+      if (!stage?.stageId) continue
+      payload.push({
+        moduleId: module.id,
+        stageId: stage.stageId,
+        answerText: composeAnswerText(
+          stage.items.length > 0
+            ? stage.items
+            : module.questions.map((q) => ({ title: q.label, prompt: q.placeholder })),
+          draft.textAnswers,
+          module.id,
+        ),
+        isFilled: true,
+      })
     }
+    if (payload.length === 0) return
+
+    await saveAnswers(work.attemptId, payload)
+    for (const item of payload) clearDraft(projectId, item.moduleId)
+    await loadWork(projectId, true)
   }
 
   /**
@@ -307,10 +331,23 @@ export const useProjectStore = defineStore('project', () => {
 
     const missing = work.stages.filter((stage) => stage.required && !stage.isFilled)
     if (missing.length === 0 && work.status === 'IN_PROGRESS') {
-      await submitWorkApi(work.attemptId)
+      const submission = await submitWorkApi(work.attemptId)
+      // 提交后立刻触发 AI 评审（后端召回评分标准 → 大模型打分 → 结算分数与技能进度）
+      let aiWarning = ''
+      try {
+        const outcome = await runAiReview(submission.submissionId)
+        if (outcome.warnings.length > 0) aiWarning = outcome.warnings.join('；')
+      } catch (error) {
+        // AI 评审失败不影响提交本身：保持在「待评审」，把原因提示给学生
+        aiWarning = error instanceof Error ? error.message : 'AI 评审暂时不可用'
+      }
       await loadWork(projectId, true)
       work = works.value[projectId]
-      if (work?.review) return work.review
+      if (work?.review) {
+        return aiWarning
+          ? { ...work.review, suggestion: [work.review.suggestion, `（AI 评审提示：${aiWarning}）`].filter(Boolean).join('\n') }
+          : work.review
+      }
     }
 
     const stage = work?.stages.find((item) => item.moduleId === moduleId)

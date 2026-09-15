@@ -15,6 +15,16 @@ export const usePositionStore = defineStore('position', () => {
   const loaded = ref(false)
 
   function progressOf(position: Position): PositionProgress {
+    // 后端岗位推荐里已经算好匹配度与技能点/项目完成情况，优先用它
+    if (typeof position.percent === 'number') {
+      return {
+        percent: position.percent,
+        skillTotal: position.skillTotal ?? 0,
+        skillDone: position.skillDone ?? 0,
+        projectTotal: position.projectTotal ?? 0,
+        projectDone: position.projectDone ?? 0,
+      }
+    }
     const skillStore = useSkillStore()
     const projectStore = useProjectStore()
 

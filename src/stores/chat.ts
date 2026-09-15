@@ -1,86 +1,131 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { fetchChatQuota, fetchChatSeed, sendQuestion } from '@/api/chat'
-import { getChatCache, setChatCache } from '@/utils/storage'
-import { localId, nowText } from '@/utils/format'
-import { withRetry } from '@/utils/request'
+import {
+  askOnce,
+  askStream,
+  createSession,
+  ensureSession,
+  fetchMessages,
+  fetchUsage,
+  type QaMessage,
+} from '@/api/qa'
+import { ApiError } from '@/api/http'
+import { formatDateTime, localId, nowText } from '@/utils/format'
 import type { ChatMessage, ChatQuota } from '@/types'
 
-/** 单次对话只保留前后三轮问答作为上下文 */
+/** 单次对话只保留前后三轮问答（后端也按 ai.qa.history_rounds 裁，这里只用于本地上下文展示） */
 const CONTEXT_TURNS = 3
-/** 仅保留一周内的历史对话 */
-const HISTORY_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+/** 单条提问字数上限（与后端 ai.qa.max_question_chars 对齐；超出后端会直接拒绝） */
+const SINGLE_LIMIT = 500
 
-function withinAWeek(message: ChatMessage): boolean {
-  const time = new Date(message.createdAt.replace(/-/g, '/')).getTime()
-  if (Number.isNaN(time)) return true
-  return Date.now() - time < HISTORY_KEEP_MS
+function toChatMessage(row: QaMessage): ChatMessage {
+  return {
+    id: row.id,
+    role: row.role === 'USER' ? 'user' : 'assistant',
+    content: row.content,
+    createdAt: formatDateTime(row.createdAt),
+    failed: row.status === 'FAILED',
+  }
 }
 
+/**
+ * AI 助教问答。
+ *
+ * 会话与消息都存在后端（`/qa/*`）：打开面板时确保有一个可用会话并拉最近消息，
+ * 提问走 SSE 流式；失败时退回一次性请求。token 与次数由后端统计，不设上限。
+ */
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
-  const quota = ref<ChatQuota>({ singleLimit: 500, dailyLimit: 50, used: 0 })
+  /** dailyLimit 恒为 0：后端只统计不限次，界面上只展示「今日已提问 N 次」 */
+  const quota = ref<ChatQuota>({ singleLimit: SINGLE_LIMIT, dailyLimit: 0, used: 0 })
+  const sessionId = ref('')
   const loading = ref(false)
   const sending = ref(false)
   const collapsed = ref(true)
   /** 当前页面上下文提示（随路由/项目自动变化） */
   const contextLabel = ref('成长中心')
 
-  const usedCount = computed(() => messages.value.filter((item) => item.role === 'user').length)
-  const remaining = computed(() => Math.max(0, quota.value.dailyLimit - usedCount.value))
-  const nearLimit = computed(() => remaining.value <= 5)
-  const canSend = computed(() => !sending.value && remaining.value > 0)
+  const usedToday = computed(() => quota.value.used)
+  const canSend = computed(() => !sending.value)
 
-  /** 发给模型的历史：只带最近三轮（用户+助手共 6 条） */
+  /** 发给模型的历史由后端按配置裁剪，这里只给界面用最近三条问答 */
   const contextMessages = computed(() => messages.value.slice(-CONTEXT_TURNS * 2))
 
+  async function refreshUsage(): Promise<void> {
+    try {
+      const usage = await fetchUsage()
+      quota.value = { ...quota.value, used: usage.today.questionCount }
+    } catch {
+      /* 用量拿不到不影响聊天 */
+    }
+  }
+
   async function init(): Promise<void> {
-    if (messages.value.length > 0) return
+    if (messages.value.length > 0 && sessionId.value) return
     loading.value = true
     try {
-      const cached = getChatCache<ChatMessage[]>()
-      if (cached && cached.length > 0) {
-        messages.value = cached.filter(withinAWeek)
-      } else {
-        const seed = await fetchChatSeed()
-        messages.value = seed.map((item) => ({ ...item, createdAt: nowText() }))
-      }
-      quota.value = await fetchChatQuota()
+      sessionId.value = await ensureSession()
+      messages.value = (await fetchMessages(sessionId.value)).map(toChatMessage)
+      await refreshUsage()
+    } catch {
+      messages.value = []
     } finally {
       loading.value = false
     }
   }
 
-  function persist(): void {
-    setChatCache(messages.value.filter(withinAWeek))
-  }
-
   function push(message: ChatMessage): void {
     messages.value = [...messages.value, message]
-    persist()
   }
 
+  function replace(messageId: string, patch: Partial<ChatMessage>): void {
+    messages.value = messages.value.map((item) =>
+      item.id === messageId ? { ...item, ...patch } : item,
+    )
+  }
+
+  /** 提问：先落一条用户消息与一条空的助手消息，流式往里补字 */
   async function ask(question: string): Promise<void> {
     const text = question.trim()
     if (!text || sending.value) return
-    push({
-      id: localId('q'),
-      role: 'user',
-      content: text,
-      createdAt: nowText(),
-    })
     sending.value = true
     try {
-      const reply = await withRetry(() => sendQuestion(text, contextMessages.value.slice(0, -1)))
-      push(reply)
-    } catch {
-      push({
-        id: localId('failed'),
-        role: 'assistant',
-        content: '网络似乎不太稳定，回复没有送达。可以点「重试」再问一次。',
-        createdAt: nowText(),
-        failed: true,
-      })
+      if (!sessionId.value) sessionId.value = await ensureSession()
+      push({ id: localId('q'), role: 'user', content: text, createdAt: nowText() })
+      const pendingId = localId('a')
+      push({ id: pendingId, role: 'assistant', content: '', createdAt: nowText() })
+
+      try {
+        const answer = await askStream(sessionId.value, text, (delta) => {
+          const current = messages.value.find((item) => item.id === pendingId)
+          if (current) replace(pendingId, { content: current.content + delta })
+        })
+        replace(pendingId, { content: answer })
+      } catch (streamError) {
+        // 只有通道问题（网络中断 / 不是流式响应）才退回一次性请求；
+        // 后端已经给出失败原因时（code=422）直接用那个原因，避免重复提问
+        const isBusinessError = streamError instanceof ApiError && streamError.code !== 500
+        let reason = streamError instanceof Error ? streamError.message : '回复没有送达'
+        if (!isBusinessError) {
+          try {
+            const answer = await askOnce(sessionId.value, text)
+            replace(pendingId, { content: answer })
+            await refreshUsage()
+            return
+          } catch (fallbackError) {
+            reason = fallbackError instanceof Error ? fallbackError.message : reason
+          }
+        }
+        messages.value = messages.value.filter((item) => item.id !== pendingId)
+        push({
+          id: localId('failed'),
+          role: 'assistant',
+          content: `回复失败：${reason}。可以点「重试」再问一次。`,
+          createdAt: nowText(),
+          failed: true,
+        })
+      }
+      await refreshUsage()
     } finally {
       sending.value = false
     }
@@ -105,15 +150,18 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
     messages.value = messages.value.filter((item) => !item.failed)
-    if (question) {
-      await ask(question.content)
-    }
+    if (question) await ask(question.content)
   }
 
-  function clear(): void {
+  /** 清空对话 = 开一个新会话（历史留在后端，按保留期过期） */
+  async function clear(): Promise<void> {
     messages.value = []
-    persist()
-    void init()
+    sessionId.value = ''
+    try {
+      sessionId.value = await createSession()
+    } catch {
+      sessionId.value = ''
+    }
   }
 
   function toggle(open?: boolean): void {
@@ -123,12 +171,12 @@ export const useChatStore = defineStore('chat', () => {
   return {
     messages,
     quota,
+    sessionId,
     loading,
     sending,
     collapsed,
     contextLabel,
-    remaining,
-    nearLimit,
+    usedToday,
     canSend,
     contextMessages,
     init,

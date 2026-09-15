@@ -63,6 +63,14 @@ export interface Position {
   skillIds: string[]
   /** 是否为当前已选岗位 */
   selected: boolean
+  /** 后端算好的匹配度 0-100（岗位技能点进度均值）；缺省时由前端按技能点现算 */
+  percent?: number
+  /** 岗位关联技能点总数 / 其中已 100% 的个数 */
+  skillTotal?: number
+  skillDone?: number
+  /** 岗位关联的已发布项目总数 / 该学生已完成个数 */
+  projectTotal?: number
+  projectDone?: number
 }
 
 /** 岗位进度画像：全部由技能点进度推导，不落库 */
@@ -79,8 +87,19 @@ export interface PositionProgress {
   projectDone: number
 }
 
-/** 带进度画像的岗位视图，列表与卡片直接使用 */
-export interface PositionView extends Position, PositionProgress {}
+/**
+ * 带进度画像的岗位视图，列表与卡片直接使用。
+ *
+ * 这里把 progress 的字段重申为必填：Position 上的同名字段是可选的（后端给了才有），
+ * 而 PositionView 一定已经补齐（见 stores/position.ts 的 views）。
+ */
+export interface PositionView extends Position {
+  percent: number
+  skillTotal: number
+  skillDone: number
+  projectTotal: number
+  projectDone: number
+}
 
 /* -------------------------------------------------------------------------- */
 /* 技能树                                                                      */
@@ -98,6 +117,11 @@ export interface SkillNode {
   systemId: SkillSystemId
   /** 技能点说明 */
   description: string
+  /** 后端算好的进度 0-100（= 挂靠项目完成度均值）；缺省时由前端按项目现算 */
+  progress?: number
+  /** 培养该技能点的已发布项目总数 / 其中已完成个数 */
+  projectTotal?: number
+  projectDone?: number
 }
 
 /**

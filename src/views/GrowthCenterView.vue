@@ -9,6 +9,7 @@ import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
+import { fetchJobProjectProgress, type JobProjectProgress } from '@/api/position'
 import { tierLabel, tierOrder } from '@/utils/format'
 import type { Position, PositionView, SkillNode } from '@/types'
 
@@ -20,6 +21,14 @@ const chat = useChatStore()
 
 const drawerVisible = ref(false)
 const drawerPosition = ref<Position | null>(null)
+/** 后端给的「当前岗位下三档项目进度」 */
+const jobProgress = ref<JobProjectProgress | null>(null)
+
+const LEVEL_BY_TIER: Record<'basic' | 'advanced' | 'extended', string> = {
+  basic: 'BASIC',
+  advanced: 'ADVANCED',
+  extended: 'EXPANDED',
+}
 
 const loading = computed(() => positionStore.loading || skillStore.loading || projectStore.loading)
 /** 我的岗位：只展示推荐度最高的三个 */
@@ -51,9 +60,27 @@ const drawerProgress = computed(() => {
   return skillStore.progressOfNodes(nodes)
 })
 
-/** 实训进度概览：按层级统计已完成 / 总数 */
+/**
+ * 实训进度概览：取后端「当前岗位下三档项目的进度」。
+ *
+ * 后端没返回时（比如还没选岗位）回退为按项目列表现算，保证页面不空。
+ */
 const tierProgress = computed(() =>
   tierOrder.map((tier) => {
+    // 主岗位下没有任何已发布项目时（后端 aggregates 为 0），回退为按全部已发布项目统计，
+    // 否则学生刚做完别的岗位的项目时这里会一直显示 0/0
+    const useBackend = (jobProgress.value?.total ?? 0) > 0
+    const fromBackend = useBackend
+      ? jobProgress.value?.levels.find((level) => LEVEL_BY_TIER[tier] === level.levelType)
+      : undefined
+    if (fromBackend) {
+      return {
+        tier,
+        name: fromBackend.levelName || tierLabel[tier],
+        done: fromBackend.completed,
+        total: fromBackend.total,
+      }
+    }
     const list = projectStore.projects.filter((project) => project.tier === tier)
     return {
       tier,
@@ -84,6 +111,11 @@ function goSkill(node: SkillNode): void {
 onMounted(async () => {
   chat.contextLabel = '成长中心 · 我的岗位与实训进度'
   await Promise.all([positionStore.load(), skillStore.load(), projectStore.load()])
+  try {
+    jobProgress.value = await fetchJobProjectProgress()
+  } catch {
+    /* 拿不到就用项目列表现算，页面不空 */
+  }
 })
 </script>
 

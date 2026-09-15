@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
             <span class="num">{{ draft.length }}</span> / {{ chat.quota.singleLimit }}
           </span>
           <span class="assistant__quota">
-            今日剩余 <span class="num">{{ chat.remaining }}</span> / {{ chat.quota.dailyLimit }} 次
+            今日已提问 <span class="num">{{ chat.usedToday }}</span> 次
           </span>
           <el-button
             type="primary"
@@ -292,7 +292,6 @@ onBeforeUnmount(() => {
           单条提问不能超过 {{ chat.quota.singleLimit }} 字，请精简后再发送。
         </p>
         <p v-else-if="hasFailed" class="assistant__error">上一次回复失败，可点击「重试」。</p>
-        <p v-else-if="chat.nearLimit" class="assistant__warn">今日提问次数接近上限，请合理安排。</p>
       </footer>
     </section>
 

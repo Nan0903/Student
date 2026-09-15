@@ -47,6 +47,14 @@ export const useSkillStore = defineStore('skill', () => {
 
   /** 单个技能点的进度：挂靠项目的平均完成度 */
   function progressOf(node: SkillNode): SkillProgress {
+    // 后端在学生成长视图里已经算好（= 挂靠项目完成度均值），优先用它，保证与后端一致
+    if (typeof node.progress === 'number') {
+      return {
+        percent: node.progress,
+        projectTotal: node.projectTotal ?? 0,
+        projectDone: node.projectDone ?? 0,
+      }
+    }
     const projects = projectsOfNode(node.id)
     if (!projects.length) return { percent: 0, projectTotal: 0, projectDone: 0 }
     let sum = 0
