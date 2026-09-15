@@ -17,7 +17,7 @@ watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value
 
     <div class="layout__body">
       <div class="layout__nav">
-        <AppNav :collapsed="navCollapsed" @collapse="navCollapsed = !navCollapsed" />
+        <AppNav @collapse="navCollapsed = true" />
       </div>
 
       <main class="layout__main">
@@ -28,6 +28,17 @@ watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value
         </router-view>
       </main>
     </div>
+
+    <button
+      v-if="navCollapsed"
+      class="layout__nav-handle"
+      type="button"
+      title="展开左侧导航"
+      aria-label="展开左侧导航"
+      @click="navCollapsed = false"
+    >
+      <span aria-hidden="true">»</span>
+    </button>
 
     <AiAssistantDock />
   </div>
@@ -48,9 +59,9 @@ watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value
   transition: grid-template-columns 0.24s ease;
 }
 
-/* 收起导航：只留一条窄栏放展开按钮，其余空间给内容区 */
+/* 收起导航：列宽归零，内容区自动铺满 */
 .layout.is-nav-collapsed .layout__body {
-  grid-template-columns: var(--nav-w-collapsed) minmax(0, 1fr);
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 /**
@@ -65,6 +76,35 @@ watch(navCollapsed, (value) => setUiPrefs({ ...getUiPrefs(), navCollapsed: value
 .layout__main {
   min-width: 0;
   padding: 24px var(--shell-pad) 48px;
+}
+
+/* 全部收起后，左侧边缘留一个小手柄用来重新展开 */
+.layout__nav-handle {
+  position: fixed;
+  top: calc(var(--header-h) + 18px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+  color: var(--brand-600);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--sh-1);
+  transition: width 0.18s ease, background 0.18s ease;
+}
+
+.layout__nav-handle:hover {
+  width: 32px;
+  background: var(--brand-050);
 }
 
 </style>
