@@ -7,6 +7,9 @@ import { platformInfo } from '@/config/nav'
 import logoImage from '@/assets/images/logo.png'
 import { formatNumber } from '@/utils/format'
 
+defineProps<{ navCollapsed?: boolean }>()
+const emit = defineEmits<{ toggleNav: [] }>()
+
 const router = useRouter()
 const route = useRoute()
 const user = useUserStore()
@@ -44,6 +47,18 @@ async function logout(): Promise<void> {
 <template>
   <header class="app-header">
     <div class="app-header__inner">
+      <!-- 左侧导航收起 / 展开 -->
+      <button
+        class="nav-toggle"
+        type="button"
+        :aria-expanded="!navCollapsed"
+        :title="navCollapsed ? '展开左侧导航' : '收起左侧导航'"
+        @click="emit('toggleNav')"
+      >
+        <span class="nav-toggle__glyph" aria-hidden="true">{{ navCollapsed ? '»' : '«' }}</span>
+        <span class="nav-toggle__label">导航</span>
+      </button>
+
       <!-- 校徽 + 校名：像校门口的门牌 -->
       <div class="brand">
         <img class="brand__logo" :src="logoImage" :alt="platformInfo.school" />
@@ -144,6 +159,34 @@ async function logout(): Promise<void> {
 }
 
 /* —— 校徽 + 校名 —— */
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: var(--r-chip);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink-inv);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.nav-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.nav-toggle__glyph {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .brand {
   display: flex;
   flex-direction: column;

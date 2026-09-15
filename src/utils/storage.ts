@@ -5,6 +5,12 @@ const PROFILE_KEY = 'spu.student.profile'
 const DRAFT_KEY = 'spu.student.draft'
 const CHAT_KEY = 'spu.student.chat'
 const ASSISTANT_KEY = 'spu.student.assistant'
+const UI_KEY = 'spu.student.ui'
+
+/** 界面偏好：目前只有左侧导航是否收起 */
+export interface UiPrefs {
+  navCollapsed?: boolean
+}
 
 function read<T>(key: string): T | null {
   try {
@@ -52,3 +58,6 @@ export const setChatCache = (messages: unknown): void => write(CHAT_KEY, message
 /** AI 悬浮球位置：用户拖动后记住，下次进来还在原地 */
 export const getAssistantSpot = <T>(): T | null => read<T>(ASSISTANT_KEY)
 export const setAssistantSpot = (value: unknown): void => write(ASSISTANT_KEY, value)
+
+export const getUiPrefs = (): UiPrefs | null => read<UiPrefs>(UI_KEY)
+export const setUiPrefs = (value: UiPrefs): void => write(UI_KEY, value)

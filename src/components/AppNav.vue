@@ -61,6 +61,8 @@ function go(path: string): void {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  /* 折叠时保持自身宽度，由外层裁掉，避免收缩过程中文字换行抖动 */
+  min-width: var(--nav-w);
   height: calc(100vh - var(--header-h));
   padding: 20px 12px 18px;
   background: var(--side-bg);
