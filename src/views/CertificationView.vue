@@ -40,6 +40,18 @@ const visibleItems = computed(
   () => (overview.value?.items ?? []).filter((item) => item.status === activeTab.value),
 )
 
+/**
+ * 「技能树达标」这一条的进度直接取技能点进度（已学成 = 进度 100% 的技能点数），
+ * 避免认证中心与技能树各说各话。
+ */
+const conditions = computed(() =>
+  (overview.value?.conditions ?? []).map((condition) => {
+    if (condition.id !== 'cond-skill') return condition
+    const done = skillStore.stats.done
+    return { ...condition, current: done, done: done >= condition.total }
+  }),
+)
+
 const maskedNo = computed(() => {
   const no = user.profile?.studentNo ?? ''
   return no.length > 6 ? `${no.slice(0, 4)}****${no.slice(-2)}` : no
@@ -49,7 +61,7 @@ const systemStats = computed(() =>
   skillStore.systems.map((system) => ({
     name: system.name,
     color: system.color,
-    lit: system.nodes.filter((node) => node.status !== 'locked').length,
+    lit: skillStore.systemProgress(system).done,
     total: system.nodes.length,
   })),
 )
@@ -80,12 +92,10 @@ onMounted(async () => {
 <template>
   <div class="certification">
     <PageTitle
-      eyebrow="Certification"
       title="技能鉴定"
-      subtitle="完成认证条件，获得技能徽章与称号。"
     >
       <template #extra>
-        <el-button round @click="comingSoon">查看技能鉴定书</el-button>
+        <el-button @click="comingSoon">查看技能鉴定书</el-button>
       </template>
     </PageTitle>
 
@@ -96,16 +106,15 @@ onMounted(async () => {
       </template>
       <template v-else>
         <article
-          v-for="condition in overview?.conditions ?? []"
+          v-for="condition in conditions"
           :key="condition.id"
           class="condition"
           :class="[`condition--${condition.tone}`, { 'is-done': condition.done }]"
         >
-        <span class="condition__icon" aria-hidden="true">{{ condition.icon }}</span>
         <div class="condition__main">
           <p class="condition__name">
             {{ condition.name }}
-            <span v-if="condition.done" class="condition__tick" aria-hidden="true">✓</span>
+            <span v-if="condition.done" class="condition__state">已达成</span>
           </p>
           <p class="condition__requirement">{{ condition.requirement }}</p>
           <div class="condition__bar">
@@ -141,13 +150,11 @@ onMounted(async () => {
             <span class="tab__count num">{{ counts[tab.key] }}</span>
           </button>
         </div>
-        <span class="certs__hint">证书由教师端审核后发放</span>
       </header>
 
       <div class="panel-body">
         <ul v-if="visibleItems.length" class="certs">
           <li v-for="item in visibleItems" :key="item.id" class="cert">
-            <span class="cert__icon" aria-hidden="true">{{ item.icon }}</span>
             <div class="cert__main">
               <p class="cert__name">{{ item.positionName }}</p>
               <p class="cert__meta">
@@ -162,11 +169,11 @@ onMounted(async () => {
                   :key="condition.name"
                   :class="{ 'is-done': condition.done }"
                 >
-                  <span class="cert__check">{{ condition.done ? '✓' : '○' }}</span>
                   {{ condition.name }}
                   <span class="num">{{ condition.current }}</span>
                   <span class="cert__slash">/</span>
                   <span class="cert__required num">{{ condition.required }}</span>
+                  <span class="cert__state">{{ condition.done ? '已达成' : '未达成' }}</span>
                 </li>
               </ul>
             </div>
@@ -200,7 +207,6 @@ onMounted(async () => {
 
         <EmptyState
           v-else
-          icon="🎖️"
           :title="activeTab === 'obtained' ? '还没有已获得的证书' : '该状态下暂无证书'"
           description="完成认证条件后，证书会在教师端审核通过后出现在这里。"
         />
@@ -266,8 +272,8 @@ onMounted(async () => {
       </div>
 
       <template #footer>
-        <el-button round @click="previewVisible = false">关闭</el-button>
-        <el-button type="primary" round @click="comingSoon">申请发放</el-button>
+        <el-button @click="previewVisible = false">关闭</el-button>
+        <el-button type="primary" @click="comingSoon">申请发放</el-button>
       </template>
     </el-dialog>
   </div>
@@ -298,33 +304,23 @@ onMounted(async () => {
   gap: 14px;
   padding: 18px 20px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--brand-500);
   border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: var(--sh-1);
 }
 
+.condition--wip {
+  border-left-color: var(--wip);
+}
+
+.condition--ok {
+  border-left-color: var(--ok);
+}
+
 .condition.is-done {
   border-color: var(--ok-line);
   background: linear-gradient(160deg, var(--ok-bg), #fff 65%);
-}
-
-.condition__icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex: none;
-  border-radius: var(--r-md);
-  background: var(--brand-050);
-  font-size: 22px;
-}
-
-.condition--wip .condition__icon {
-  background: var(--wip-bg);
-}
-
-.condition--ok .condition__icon {
-  background: var(--ok-bg);
 }
 
 .condition__main {
@@ -340,15 +336,15 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-.condition__tick {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ok);
-  color: #fff;
+.condition__state {
+  padding: 0 7px;
+  border: 1px solid var(--ok-line);
+  border-radius: var(--r-chip);
+  background: var(--ok-bg);
+  color: #2f8a08;
   font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .condition__requirement {
@@ -361,14 +357,14 @@ onMounted(async () => {
 .condition__bar {
   height: 6px;
   overflow: hidden;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-bar);
   background: var(--line-soft);
 }
 
 .condition__fill {
   display: block;
   height: 100%;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-bar);
   background: linear-gradient(90deg, var(--brand-600), #4aa3ff);
 }
 
@@ -424,7 +420,7 @@ onMounted(async () => {
   gap: 6px;
   padding: 7px 16px;
   border: 0;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-2);
   font-size: 13.5px;
@@ -439,11 +435,6 @@ onMounted(async () => {
 }
 
 .tab__count {
-  font-size: 12px;
-}
-
-.certs__hint {
-  color: var(--ink-3);
   font-size: 12px;
 }
 
@@ -468,17 +459,6 @@ onMounted(async () => {
 .cert:hover {
   border-color: var(--brand-300);
   box-shadow: var(--sh-1);
-}
-
-.cert__icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  flex: none;
-  border-radius: var(--r-md);
-  background: var(--brand-050);
-  font-size: 24px;
 }
 
 .cert__main {
@@ -515,8 +495,14 @@ onMounted(async () => {
   color: #2f8a08;
 }
 
-.cert__check {
+.cert__state {
+  color: var(--ink-3);
   font-size: 11px;
+}
+
+.cert__conditions li.is-done .cert__state {
+  color: #2f8a08;
+  font-weight: 600;
 }
 
 .cert__slash {
@@ -645,7 +631,7 @@ onMounted(async () => {
 .diploma__badge {
   padding: 3px 11px;
   border: 1px solid rgba(255, 197, 61, 0.5);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: rgba(255, 197, 61, 0.14);
   color: #ffd977;
   font-size: 11.5px;

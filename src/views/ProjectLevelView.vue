@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, UploadFilled } from '@element-plus/icons-vue'
 import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LevelStepper from '@/components/LevelStepper.vue'
@@ -378,8 +377,7 @@ onUnmounted(() => {
     <!-- 顶部条 -->
     <header class="topbar panel">
       <button class="back" type="button" @click="router.push('/map')">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
+        返回关卡地图
       </button>
       <div class="topbar__title">
         <h1 class="topbar__name">{{ project.name }}</h1>
@@ -394,8 +392,8 @@ onUnmounted(() => {
         <span class="topbar__score-value num">{{ project.score ?? '—' }}</span>
       </div>
       <div class="topbar__actions">
-        <el-button v-if="work?.status === 'COMPLETED'" round @click="startWork">重新挑战</el-button>
-        <el-button v-if="work?.status === 'SUBMITTED'" round @click="withdraw">撤回提交</el-button>
+        <el-button v-if="work?.status === 'COMPLETED'" @click="startWork">重新挑战</el-button>
+        <el-button v-if="work?.status === 'SUBMITTED'" @click="withdraw">撤回提交</el-button>
       </div>
     </header>
 
@@ -531,7 +529,6 @@ onUnmounted(() => {
       <main class="work">
         <div v-if="notStarted" class="panel">
           <EmptyState
-            icon="🚩"
             title="还没有开始这个项目"
             description="点击「开始闯关」后系统会为你建立本轮实训记录；之后逐关保存作答，全部关卡完成后自动整单提交。"
             action-text="开始闯关"
@@ -540,7 +537,7 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="!activeModule" class="panel">
-          <EmptyState icon="🔒" title="该项目暂未解锁" :description="project.lockReason ?? '完成前置项目即可解锁'" />
+          <EmptyState title="该项目暂未解锁" :description="project.lockReason ?? '完成前置项目即可解锁'" />
         </div>
 
         <section v-else class="panel work__panel">
@@ -597,7 +594,6 @@ onUnmounted(() => {
                 :show-file-list="false"
                 :on-change="handleUploadChange"
               >
-                <el-icon class="upload__icon"><UploadFilled /></el-icon>
                 <p class="upload__text">把文件拖到这里，或<em>点击选择文件</em></p>
                 <p class="upload__hint">
                   选好即上传到服务器并挂在本关，建议传关键过程截图、测试数据表与实训报告
@@ -607,7 +603,6 @@ onUnmounted(() => {
               <!-- 正在上传 -->
               <ul v-if="Object.keys(uploading).length" class="filelist">
                 <li v-for="(percent, name) in uploading" :key="name" class="file">
-                  <span class="file__icon" aria-hidden="true">⏳</span>
                   <span class="file__main">
                     <span class="file__name">{{ name }}</span>
                     <span class="file__meta num">上传中 {{ percent }}%</span>
@@ -621,7 +616,6 @@ onUnmounted(() => {
               <!-- 已挂在本关的附件（存在服务器上） -->
               <ul v-if="files.length" class="filelist">
                 <li v-for="file in files" :key="file.id" class="file">
-                  <span class="file__icon" aria-hidden="true">📎</span>
                   <span class="file__main">
                     <span class="file__name">{{ file.name }}</span>
                     <span class="file__meta num">{{ formatFileSize(file.size) }}</span>
@@ -642,7 +636,7 @@ onUnmounted(() => {
                     title="移除"
                     @click="removeFile(file.id)"
                   >
-                    <el-icon><Delete /></el-icon>
+                    移除
                   </button>
                 </li>
               </ul>
@@ -658,18 +652,17 @@ onUnmounted(() => {
           </div>
 
           <footer class="work__foot">
-            <el-button round :disabled="readOnly || notStarted" @click="saveCurrent">
+            <el-button :disabled="readOnly || notStarted" @click="saveCurrent">
               保存本关
             </el-button>
             <el-button
               v-if="activeGate === 'done'"
               type="primary"
-              round
               @click="openLastReview"
             >
               查看评判结果
             </el-button>
-            <el-button type="primary" round :disabled="!canSubmit" :loading="reviewing" @click="submit">
+            <el-button type="primary" :disabled="!canSubmit" :loading="reviewing" @click="submit">
               提交本关
             </el-button>
           </footer>
@@ -706,7 +699,6 @@ onUnmounted(() => {
 
   <div v-else class="panel">
     <EmptyState
-      icon="🧭"
       title="没有找到这个实训项目"
       description="项目可能已被教师端下架，或链接不正确。"
       action-text="返回关卡地图"
@@ -1107,9 +1099,10 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.upload__icon {
-  font-size: 34px;
-  color: var(--brand-300);
+/* 去掉上传区图标后收紧内边距，避免中间空一大块 */
+.upload :deep(.el-upload-dragger) {
+  padding: 22px 20px;
+  border-radius: var(--r-chip);
 }
 
 .upload__text {
@@ -1174,14 +1167,17 @@ onUnmounted(() => {
 }
 
 .file__remove {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
   border: 0;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1351,7 +1347,7 @@ onUnmounted(() => {
   flex: none;
   padding: 3px 10px;
   border: 1px solid var(--brand-100);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--brand-050);
   color: var(--brand-600);
   font-size: 12px;

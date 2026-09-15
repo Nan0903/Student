@@ -45,7 +45,6 @@ export type PositionDifficulty = '较易' | '中等' | '较难'
 export interface Position {
   id: string
   name: string
-  icon: string
   /** 岗位方向标签：工业视觉 / AI 训练 … */
   direction: string
   difficulty: PositionDifficulty
@@ -57,40 +56,61 @@ export interface Position {
   heat: number
   /** 已选人数 / 通过人数 */
   selectedCount: number
-  /** 已点亮技能数 */
-  litSkillCount: number
-  /** 已点亮技能总数（用于匹配度展示） */
-  totalSkillCount: number
-  finishedProjectCount: number
-  /** 匹配度 0-100（岗位推荐用） */
-  matchRate: number
+  /**
+   * 岗位由哪些技能点构成（技能点 id 列表）。
+   * 岗位匹配度取这些技能点进度的均值，页面不再接受手工填写的匹配度。
+   */
+  skillIds: string[]
   /** 是否为当前已选岗位 */
   selected: boolean
 }
+
+/** 岗位进度画像：全部由技能点进度推导，不落库 */
+export interface PositionProgress {
+  /** 匹配度 0-100：岗位技能点的平均进度 */
+  percent: number
+  /** 岗位涉及的技能点总数 */
+  skillTotal: number
+  /** 其中已 100% 完成的技能点数 */
+  skillDone: number
+  /** 岗位下挂靠的项目总数 */
+  projectTotal: number
+  /** 其中已全部通关的项目数 */
+  projectDone: number
+}
+
+/** 带进度画像的岗位视图，列表与卡片直接使用 */
+export interface PositionView extends Position, PositionProgress {}
 
 /* -------------------------------------------------------------------------- */
 /* 技能树                                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** 技能体系 ID：由后端 skill_tree 主键决定，不再是固定枚举（教师端可新增体系） */
+/**
+ * 技能体系 ID：后端 skill_tree 主键 / 编码决定，教师端可新增体系，
+ * 所以这里不写死枚举（页面只把它当 key 用）。
+ */
 export type SkillSystemId = string
-
-export type SkillNodeStatus = 'locked' | 'active' | 'mastered'
 
 export interface SkillNode {
   id: string
   name: string
   systemId: SkillSystemId
-  icon: string
-  status: SkillNodeStatus
-  /** 点亮进度；接入真实数据后 current/total 即「进度百分比」，如 50/100 */
-  progress: { current: number; total: number }
-  /** 简要解锁说明 */
+  /** 技能点说明 */
   description: string
-  /** 前置条件（技能名） */
-  prerequisites: string[]
-  /** 关联实训项目，未解锁时「前往实训」跳转用 */
-  projectIds: string[]
+}
+
+/**
+ * 技能点进度：由挂靠项目的完成度推导，不在数据里写死。
+ * 一个项目可以挂靠多个技能点，一个技能点也可以由多个项目共同训练。
+ */
+export interface SkillProgress {
+  /** 0-100：挂靠项目的平均完成度 */
+  percent: number
+  /** 挂靠项目总数 */
+  projectTotal: number
+  /** 其中已全部通关的项目数 */
+  projectDone: number
 }
 
 export interface SkillSystem {
@@ -101,9 +121,12 @@ export interface SkillSystem {
 }
 
 export interface SkillTreeStats {
-  active: number
-  mastered: number
+  /** 技能点总数 */
   total: number
+  /** 已 100% 完成的技能点数 */
+  done: number
+  /** 全部技能点的平均进度 0-100 */
+  percent: number
 }
 
 /* -------------------------------------------------------------------------- */
@@ -158,8 +181,9 @@ export interface Project {
   id: string
   name: string
   tier: ProjectTier
-  icon: string
   positionId: string
+  /** 本项目挂靠的技能点（多对多：一个项目可覆盖多个技能点） */
+  skillIds: string[]
   status: ProjectStatus
   /** 关卡总数 */
   levelTotal: number
@@ -176,6 +200,13 @@ export interface Project {
   modules: TrainModule[]
   /** 项目资料（报告模板 / 数据文件 / 说明文档），由教师端上传 */
   files: ProjectFile[]
+}
+
+/** 项目卡上的技能点小标签：名称 + 所属体系取色 */
+export interface ProjectSkillTag {
+  id: string
+  name: string
+  color: string
 }
 
 /** 项目附件用途 */
@@ -339,7 +370,6 @@ export interface CertificationCondition {
 export interface Certification {
   id: string
   positionName: string
-  icon: string
   status: CertificationStatus
   obtainedAt?: string
   conditions: CertificationCondition[]
@@ -354,7 +384,6 @@ export interface CertificationOverview {
 export interface CertificationConditionCard {
   id: string
   name: string
-  icon: string
   requirement: string
   done: boolean
   current: number
@@ -400,6 +429,4 @@ export interface NavItem {
   key: string
   label: string
   path: string
-  /** 左侧栏分组标题 */
-  group?: string
 }

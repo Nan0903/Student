@@ -9,8 +9,8 @@ import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
-import { tierLabel, tierOrder, tierSubtitle } from '@/utils/format'
-import type { Project } from '@/types'
+import { tierLabel, tierOrder } from '@/utils/format'
+import type { Project, ProjectSkillTag } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,12 +40,31 @@ const filteredProjects = computed(() => {
 
 const skillProjectIds = computed(() => {
   if (!skillFilter.value) return []
-  return skillStore.getNode(skillFilter.value)?.projectIds ?? []
+  return skillStore.projectsOfNode(skillFilter.value).map((project) => project.id)
 })
 
 const skillName = computed(() =>
   skillFilter.value ? (skillStore.getNode(skillFilter.value)?.name ?? '') : '',
 )
+
+/** 体系取色表：项目卡上的技能点标签跟随所属体系配色 */
+const systemColors = computed(
+  () => new Map(skillStore.systems.map((system) => [system.id, system.color])),
+)
+
+/** 岗位名表：项目卡上展示「所属岗位」 */
+const positionNames = computed(
+  () => new Map(positionStore.positions.map((position) => [position.id, position.name])),
+)
+
+/** 项目挂靠的技能点 → 卡片上的小标签 */
+function skillTags(project: Project): ProjectSkillTag[] {
+  return skillStore.nodesOfProject(project.id).map((node) => ({
+    id: node.id,
+    name: node.name,
+    color: systemColors.value.get(node.systemId) ?? '#1e7be8',
+  }))
+}
 
 const groups = computed(() =>
   tierOrder.map((tier) => {
@@ -59,7 +78,6 @@ const groups = computed(() =>
     return {
       tier,
       name: tierLabel[tier],
-      subtitle: tierSubtitle[tier],
       done: list.filter((project) => project.status === 'completed').length,
       total: list.length,
       projects: list,
@@ -111,9 +129,7 @@ onMounted(async () => {
 <template>
   <div class="level-map">
     <PageTitle
-      eyebrow="Level Map"
       title="关卡地图"
-      subtitle="每个实训项目拆成固定关卡，逐关提交、逐关通过。"
     >
       <template #extra>
         <ul class="legend">
@@ -145,12 +161,12 @@ onMounted(async () => {
           type="button"
           @click="selectedPosition = position.id"
         >
-          <span aria-hidden="true">{{ position.icon }}</span>
           {{ position.name }}
         </button>
       </div>
       <button v-if="skillFilter" class="skill-chip" type="button" @click="skillFilter = ''">
-        技能：{{ skillName }} ✕
+        技能：{{ skillName }}
+        <span class="skill-chip__clear">清除</span>
       </button>
     </div>
 
@@ -166,7 +182,6 @@ onMounted(async () => {
         <header class="tier-block__head">
           <div class="tier-block__title">
             <span class="tier-block__name">{{ group.name }}</span>
-            <span class="tier-block__sub">{{ group.subtitle }}</span>
           </div>
           <span class="tier-block__progress">
             <span class="num">{{ group.done }}</span> /
@@ -181,7 +196,12 @@ onMounted(async () => {
             class="card-wrap"
             :class="{ 'is-highlight': isHighlighted(project) }"
           >
-            <ProjectCard :project="project" @open="openProject" />
+            <ProjectCard
+              :project="project"
+              :skills="skillTags(project)"
+              :position-name="positionNames.get(project.positionId)"
+              @open="openProject"
+            />
           </div>
         </div>
       </section>
@@ -189,7 +209,6 @@ onMounted(async () => {
 
     <div v-else class="panel">
       <EmptyState
-        icon="🗺️"
         title="该岗位暂无可挑战项目"
         description="切换其他岗位，或先完成基础实训解锁更多项目。"
         action-text="查看全部岗位"
@@ -212,7 +231,7 @@ onMounted(async () => {
   gap: 16px;
   padding: 8px 16px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--surface);
   box-shadow: var(--sh-1);
 }
@@ -275,7 +294,7 @@ onMounted(async () => {
   gap: 6px;
   padding: 6px 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--surface);
   color: var(--ink-2);
   font-size: 13px;
@@ -297,15 +316,25 @@ onMounted(async () => {
 }
 
 .skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   padding: 5px 14px;
   border: 1px dashed var(--brand-300);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--brand-050);
   color: var(--brand-600);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.skill-chip__clear {
+  padding-left: 8px;
+  border-left: 1px solid var(--brand-300);
+  color: var(--brand-600);
+  opacity: 0.75;
 }
 
 /* —— 层级区块 —— */
@@ -339,11 +368,6 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-.tier-block__sub {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
 .tier-block__progress {
   color: var(--ink-2);
   font-size: 12px;
@@ -356,15 +380,14 @@ onMounted(async () => {
 }
 
 .tier-block__row {
-  display: flex;
-  gap: 14px;
-  padding: 4px;
-  overflow-x: auto;
+  display: grid;
+  /* 固定一行三个，卡片尺寸不随内容变化 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 4px 0;
 }
 
 .card-wrap {
-  flex: 1 1 220px;
-  min-width: 200px;
   border-radius: var(--r-md);
   transition: box-shadow 0.2s ease;
 }

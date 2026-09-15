@@ -1,18 +1,56 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { fetchPositions, selectPosition } from '@/api/position'
-import type { Position } from '@/types'
+import { useProjectStore } from '@/stores/project'
+import { useSkillStore } from '@/stores/skill'
+import type { Position, PositionProgress, PositionView, SkillNode } from '@/types'
 
+/**
+ * 岗位由若干个技能点构成（Position.skillIds），
+ * 匹配度 = 这些技能点进度的均值，推荐顺序也按它排。
+ */
 export const usePositionStore = defineStore('position', () => {
   const positions = ref<Position[]>([])
   const loading = ref(false)
   const loaded = ref(false)
 
-  const currentPosition = computed(() => positions.value.find((item) => item.selected) ?? null)
+  function progressOf(position: Position): PositionProgress {
+    const skillStore = useSkillStore()
+    const projectStore = useProjectStore()
 
-  /** 成长中心：按已点亮技能数（匹配度）倒序 */
+    const nodes = position.skillIds
+      .map((id) => skillStore.getNode(id))
+      .filter((node): node is SkillNode => node !== null)
+    const skills = skillStore.progressOfNodes(nodes)
+
+    const projects = projectStore.projects.filter((project) => project.positionId === position.id)
+    const projectDone = projects.filter(
+      (project) => projectStore.passedOf(project.id) >= project.levelTotal,
+    ).length
+
+    return {
+      percent: skills.percent,
+      skillTotal: skills.total,
+      skillDone: skills.done,
+      projectTotal: projects.length,
+      projectDone,
+    }
+  }
+
+  /** 岗位 + 进度画像 */
+  const views = computed<PositionView[]>(() =>
+    positions.value.map((position) => ({ ...position, ...progressOf(position) })),
+  )
+
+  /** 成长中心 / 岗位选择：按技能点进度倒序推荐 */
   const rankedPositions = computed(() =>
-    [...positions.value].sort((a, b) => b.matchRate - a.matchRate || b.litSkillCount - a.litSkillCount),
+    [...views.value].sort(
+      (a, b) => b.percent - a.percent || b.skillDone - a.skillDone || a.name.localeCompare(b.name),
+    ),
+  )
+
+  const currentPosition = computed<PositionView | null>(
+    () => views.value.find((item) => item.selected) ?? null,
   )
 
   const currentPositionId = computed(() => currentPosition.value?.id ?? '')
@@ -34,11 +72,13 @@ export const usePositionStore = defineStore('position', () => {
 
   return {
     positions,
+    views,
     loading,
     loaded,
     currentPosition,
     currentPositionId,
     rankedPositions,
+    progressOf,
     load,
     choose,
   }

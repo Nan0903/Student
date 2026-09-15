@@ -53,6 +53,10 @@
   --r-lg: 16px;
   --r-xl: 22px;
   --r-pill: 999px;
+  /* 选项、标签、按钮一类的控件：方形为主，只留一点点圆角 */
+  --r-chip: 4px;
+  /* 细进度条：比控件再收一点 */
+  --r-bar: 2px;
   --sh-1: 0 1px 2px rgba(31, 35, 41, 0.05), 0 2px 8px rgba(31, 35, 41, 0.04);
   --sh-2: 0 6px 18px rgba(30, 123, 232, 0.1), 0 2px 6px rgba(31, 35, 41, 0.05);
   --sh-3: 0 18px 44px rgba(18, 60, 120, 0.16);
@@ -86,7 +90,9 @@
   --el-color-warning: #fa8c16;
   --el-color-danger: #f5222d;
   --el-font-family: var(--font-ui);
-  --el-border-radius-base: 8px;
+  --el-border-radius-base: 6px;
+  --el-dialog-border-radius: 8px;
+  --el-messagebox-border-radius: 8px;
   --el-text-color-primary: #1f2329;
   --el-text-color-regular: #646a73;
   --el-text-color-secondary: #8f959e;

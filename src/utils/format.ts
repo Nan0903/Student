@@ -27,12 +27,6 @@ export const tierLabel: Record<ProjectTier, string> = {
   extended: '拓展实训',
 }
 
-export const tierSubtitle: Record<ProjectTier, string> = {
-  basic: '新手入门 · 掌握核心基础技能',
-  advanced: '综合应用 · 解决真实场景难题',
-  extended: '产线实战 · 面向交付的完整链路',
-}
-
 export const tierOrder: ProjectTier[] = ['basic', 'advanced', 'extended']
 
 export const projectStatusLabel: Record<ProjectStatus, string> = {
@@ -52,14 +46,6 @@ export const projectStatusTone: Record<ProjectStatus, 'todo' | 'wip' | 'done' | 
   locked: 'lock',
 }
 
-export const projectStatusIcon: Record<ProjectStatus, string> = {
-  not_started: '⚡',
-  in_progress: '▶',
-  submitted: '📝',
-  completed: '🏆',
-  locked: '🔒',
-}
-
 export const moduleStatusLabel: Record<ModuleStatus, string> = {
   draft: '草稿',
   submitted: '待评判',
@@ -72,13 +58,6 @@ export const difficultyTone: Record<PositionDifficulty, 'todo' | 'wip' | 'lock'>
   中等: 'wip',
   较难: 'lock',
 }
-
-/** 颜色变量 → 技能体系取色 */
-export const skillStatusLabel = {
-  locked: '未解锁',
-  active: '已激活',
-  mastered: '已精通',
-} as const
 
 /** 文件体积展示 */
 export function formatFileSize(bytes: number): string {

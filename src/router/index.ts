@@ -97,4 +97,15 @@ router.afterEach((to) => {
     : '岗位闯关式实训平台'
 })
 
+/**
+ * 预热某个路径对应的路由组件。
+ * 体积较大的页面（比如带 AntV G6 的技能树）在鼠标悬停导航时就开始加载，
+ * 真正进入页面时就不用先等一段空白。
+ */
+export function prefetchRoute(path: string): void {
+  const record = router.resolve(path).matched.at(-1)
+  const loader = record?.components?.default
+  if (typeof loader === 'function') void (loader as () => Promise<unknown>)()
+}
+
 export default router

@@ -1,15 +1,40 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { projectStatusIcon, projectStatusLabel, projectStatusTone } from '@/utils/format'
-import type { Project } from '@/types'
+import { projectStatusLabel, projectStatusTone } from '@/utils/format'
+import type { Project, ProjectSkillTag } from '@/types'
 
-const props = defineProps<{ project: Project }>()
+const props = defineProps<{
+  project: Project
+  /** 关联技能点标签，由页面按「项目关联技能点」的关系算好传进来 */
+  skills?: ProjectSkillTag[]
+  /** 项目所属岗位名 */
+  positionName?: string
+}>()
+
 const emit = defineEmits<{ open: [project: Project] }>()
 
 const tone = computed(() => projectStatusTone[props.project.status])
 const label = computed(() => projectStatusLabel[props.project.status])
-const icon = computed(() => projectStatusIcon[props.project.status])
 const locked = computed(() => props.project.status === 'locked')
+const score = computed(() => props.project.score)
+
+/** 固定卡片高度，标签最多铺两行，超出折成 +N */
+const MAX_TAGS = 5
+const visibleSkills = computed(() => (props.skills ?? []).slice(0, MAX_TAGS))
+const hiddenCount = computed(() => Math.max(0, (props.skills?.length ?? 0) - MAX_TAGS))
+
+const barColor = computed(() => {
+  switch (props.project.status) {
+    case 'completed':
+      return 'var(--ok)'
+    case 'in_progress':
+      return 'var(--wip)'
+    case 'locked':
+      return 'var(--lock)'
+    default:
+      return 'var(--brand-500)'
+  }
+})
 
 function onClick(): void {
   emit('open', props.project)
@@ -31,52 +56,66 @@ function onClick(): void {
       @keydown.enter.prevent="onClick"
       @keydown.space.prevent="onClick"
     >
-      <div class="project-card__top">
-        <span class="project-card__icon" aria-hidden="true">{{ project.icon }}</span>
-        <span class="pill" :class="`pill--${tone}`">
-          <span aria-hidden="true">{{ icon }}</span>
-          <span v-if="project.status === 'completed' && project.score" class="num">
-            {{ project.score }}分
+      <header class="project-card__head">
+        <span class="pill" :class="`pill--${tone}`">{{ label }}</span>
+        <span class="project-card__score">
+          <span class="project-card__score-label">最高分</span>
+          <span class="project-card__score-value num" :class="{ 'is-empty': score == null }">
+            {{ score ?? '—' }}
           </span>
-          <span v-else>{{ label }}</span>
         </span>
-      </div>
+      </header>
 
       <h4 class="project-card__name">{{ project.name }}</h4>
 
-      <div class="project-card__meta">
-        <span class="num">{{ project.levelDone }}</span>
-        <span class="project-card__meta-sep">/</span>
-        <span class="num">{{ project.levelTotal }}</span>
-        <span class="project-card__meta-label">关卡</span>
+      <p class="project-card__position">
+        <span class="meta-tag">所属岗位</span>
+        <span class="project-card__position-name">{{ positionName ?? '未关联岗位' }}</span>
+      </p>
+
+      <div class="project-card__skills">
+        <span class="meta-tag">关联技能点</span>
+        <span
+          v-for="skill in visibleSkills"
+          :key="skill.id"
+          class="skill-tag"
+          :style="{ '--tone': skill.color }"
+        >
+          {{ skill.name }}
+        </span>
+        <span v-if="hiddenCount" class="skill-tag skill-tag--more">+{{ hiddenCount }}</span>
+        <span v-if="!visibleSkills.length" class="project-card__muted">暂无</span>
       </div>
 
-      <el-progress
-        :percentage="project.progress"
-        :stroke-width="6"
-        :show-text="false"
-        :color="tone === 'done' ? '#52c41a' : tone === 'wip' ? '#fa8c16' : '#1677ff'"
-      />
-
-      <p class="project-card__foot">
-        <template v-if="locked">{{ project.lockReason ?? '完成更多基础项目即可解锁' }}</template>
-        <template v-else-if="project.status === 'completed'">点击回看历史记录与教师点评</template>
-        <template v-else-if="project.status === 'submitted'">已整单提交，等待评审结果</template>
-        <template v-else-if="project.status === 'in_progress'">继续第 {{ project.levelDone + 1 }} 关</template>
-        <template v-else>开始第一关</template>
-      </p>
+      <footer class="project-card__foot">
+        <span class="project-card__levels">
+          <span class="meta-tag">关卡</span>
+          <span class="num project-card__levels-value">{{ project.levelDone }}</span>
+          <span class="project-card__levels-sep">/</span>
+          <span class="num project-card__levels-total">{{ project.levelTotal }}</span>
+          <span class="project-card__levels-unit">关</span>
+        </span>
+        <span class="project-card__bar" aria-hidden="true">
+          <i :style="{ width: `${project.progress}%`, background: barColor }" />
+        </span>
+        <span class="project-card__percent num">{{ project.progress }}%</span>
+      </footer>
     </article>
   </el-tooltip>
 </template>
 
 <style scoped>
+/**
+ * 项目卡：固定尺寸，一行三个。
+ * 信息顺序 —— 状态 / 最高分 → 项目名称 → 所属岗位 → 关联技能点 → 关卡进度。
+ */
 .project-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 100%;
-  min-width: 200px;
-  padding: 16px 16px 14px;
+  height: 248px;
+  padding: 16px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
@@ -103,64 +142,179 @@ function onClick(): void {
   box-shadow: var(--sh-1);
 }
 
-.project-card__top {
+/* —— 状态 + 最高分 —— */
+.project-card__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.project-card__icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: var(--r-sm);
-  background: var(--brand-050);
-  font-size: 22px;
+.project-card__score {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
 }
 
-.is-locked .project-card__icon {
-  background: #ececec;
-  filter: grayscale(1);
-  opacity: 0.7;
+.project-card__score-label {
+  color: var(--ink-3);
+  font-size: 11px;
 }
 
-.project-card__name {
-  min-height: 44px;
-  font-size: 14px;
+.project-card__score-value {
+  color: var(--brand-600);
+  font-size: 20px;
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 1.1;
 }
 
-.is-locked .project-card__name,
-.is-locked .project-card__meta,
-.is-locked .project-card__foot {
+.project-card__score-value.is-empty {
   color: var(--ink-3);
 }
 
-.project-card__meta {
+.is-locked .project-card__score-value {
+  color: var(--ink-3);
+}
+
+/* —— 项目名称 —— */
+.project-card__name {
+  display: -webkit-box;
+  min-height: 44px;
+  overflow: hidden;
+  color: var(--ink-1);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* —— 所属岗位 —— */
+.project-card__position {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.project-card__position-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-tag {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* —— 关联技能点 —— */
+.project-card__skills {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 5px;
+  max-height: 46px;
+  overflow: hidden;
+}
+
+.skill-tag {
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--tone) 28%, #fff);
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--tone) 9%, #fff);
+  color: color-mix(in srgb, var(--tone) 58%, #1b2a44);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.skill-tag--more {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-3);
+}
+
+.is-locked .skill-tag {
+  opacity: 0.7;
+  filter: grayscale(0.7);
+}
+
+.project-card__muted {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+/* —— 关卡进度 —— */
+.project-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+
+.project-card__levels {
   display: flex;
   align-items: baseline;
   gap: 3px;
-  color: var(--ink-2);
-  font-size: 12px;
+  flex: none;
 }
 
-.project-card__meta .num {
+.project-card__levels .meta-tag {
+  margin-right: 3px;
+}
+
+.project-card__levels-value,
+.project-card__levels-total {
   color: var(--ink-1);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
 }
 
-.project-card__meta-label {
-  margin-left: 4px;
+.project-card__levels-sep,
+.project-card__levels-unit {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.is-locked .project-card__levels-value,
+.is-locked .project-card__levels-total {
   color: var(--ink-3);
 }
 
-.project-card__foot {
-  color: var(--ink-3);
+.project-card__bar {
+  display: block;
+  flex: 1;
+  min-width: 40px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--r-bar);
+  background: var(--line-soft);
+}
+
+.project-card__bar i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-bar);
+  transition: width 0.4s ease;
+}
+
+.project-card__percent {
+  flex: none;
+  width: 38px;
+  color: var(--ink-2);
   font-size: 12px;
-  line-height: 1.5;
+  font-weight: 700;
+  text-align: right;
 }
 </style>

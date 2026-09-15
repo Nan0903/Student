@@ -87,7 +87,7 @@ onMounted(() => {
           <p class="gate__eyebrow">{{ platformInfo.platform }}</p>
           <h1 class="gate__headline">推开这扇门，<br />从第一关开始。</h1>
           <p class="gate__lede">
-            选岗位、点亮技能树、逐关提交实训成果。每一关都有 AI 先判一次，
+            选岗位、推进技能树、逐关提交实训成果。每一关都有 AI 先判一次，
             教师的点评会跟着你的作答一起长出来。
           </p>
 
@@ -116,7 +116,6 @@ onMounted(() => {
             :disabled="Boolean(pending)"
             @click="enterStudent"
           >
-            <span class="role__icon" aria-hidden="true">🎓</span>
             <span class="role__body">
               <span class="role__name">学生端</span>
               <span class="role__desc">
@@ -137,7 +136,6 @@ onMounted(() => {
             :disabled="Boolean(pending)"
             @click="enterTeacher"
           >
-            <span class="role__icon" aria-hidden="true">🧑‍🏫</span>
             <span class="role__body">
               <span class="role__name">教师端</span>
               <span class="role__desc">发布项目、审核报告、复审学生的申诉</span>
@@ -333,10 +331,6 @@ onMounted(() => {
   opacity: 0.75;
 }
 
-.role__icon {
-  font-size: 24px;
-}
-
 .role__body {
   display: flex;
   flex-direction: column;
@@ -401,7 +395,6 @@ onMounted(() => {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-.role--teacher .role__icon,
 .role--teacher .role__name,
 .role--teacher .role__desc,
 .role--teacher .role__foot-text {

@@ -83,10 +83,10 @@ const canWithdraw = computed(() => {
           class="dimension"
           :class="{ 'is-fail': !dimension.passed }"
         >
-          <span class="dimension__icon" aria-hidden="true">{{ dimension.passed ? '✓' : '!' }}</span>
           <div class="dimension__main">
             <div class="dimension__top">
               <span class="dimension__name">{{ dimension.name }}</span>
+              <span class="dimension__state">{{ dimension.passed ? '达标' : '待改进' }}</span>
               <span class="dimension__score num">{{ dimension.score }}</span>
             </div>
             <p class="dimension__reason">{{ dimension.reason }}</p>
@@ -96,7 +96,9 @@ const canWithdraw = computed(() => {
       </template>
 
       <div v-if="review.suggestion" class="review__suggestion">
-        <p class="review__suggestion-title">{{ review.reviewStatus === 'rechecked' ? '教师评语' : '批注与建议' }}</p>
+        <p class="review__suggestion-title">
+          {{ review.reviewStatus === 'rechecked' ? '教师评语' : '批注与建议' }}
+        </p>
         <p class="review__suggestion-text">{{ review.suggestion }}</p>
       </div>
 
@@ -122,13 +124,13 @@ const canWithdraw = computed(() => {
     </section>
 
     <footer class="review__foot">
-      <el-button round @click="emit('back')">
+      <el-button @click="emit('back')">
         {{ review.reviewStatus === 'saved' ? '继续下一关' : '返回关卡地图' }}
       </el-button>
-      <el-button v-if="canWithdraw" type="warning" round @click="emit('withdraw')">
+      <el-button v-if="canWithdraw" type="warning" @click="emit('withdraw')">
         撤回本次提交
       </el-button>
-      <el-button v-if="canObject" type="warning" round @click="emit('recheck', note)">
+      <el-button v-if="canObject" type="warning" @click="emit('recheck', note)">
         申请教师复核
       </el-button>
     </footer>
@@ -201,10 +203,6 @@ const canWithdraw = computed(() => {
   background: conic-gradient(from -90deg, rgba(140, 160, 190, 0.28), rgba(140, 160, 190, 0.12));
 }
 
-.review__ring--idle .review__ring-inner {
-  box-shadow: 0 2px 10px rgba(120, 140, 170, 0.16);
-}
-
 .review__ring-idle {
   color: var(--ink-3);
   font-size: 30px;
@@ -226,7 +224,7 @@ const canWithdraw = computed(() => {
 
 .review__grade-badge {
   padding: 2px 12px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--wip);
   color: #fff;
   font-size: 14px;
@@ -276,21 +274,21 @@ const canWithdraw = computed(() => {
   background: var(--surface-2);
 }
 
-.dimension__icon {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--ok);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+.dimension__state {
+  padding: 0 7px;
+  border: 1px solid var(--ok-line);
+  border-radius: var(--r-chip);
+  background: var(--ok-bg);
+  color: #2f8a08;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
-.dimension.is-fail .dimension__icon {
-  background: var(--wip);
+.dimension.is-fail .dimension__state {
+  border-color: var(--wip-line);
+  background: var(--wip-bg);
+  color: #b35c00;
 }
 
 .dimension__main {
@@ -302,7 +300,7 @@ const canWithdraw = computed(() => {
 
 .dimension__top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
 }
 
