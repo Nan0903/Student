@@ -56,10 +56,10 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
           class="dimension"
           :class="{ 'is-fail': !dimension.passed }"
         >
-          <span class="dimension__icon" aria-hidden="true">{{ dimension.passed ? '✓' : '!' }}</span>
           <div class="dimension__main">
             <div class="dimension__top">
               <span class="dimension__name">{{ dimension.name }}</span>
+              <span class="dimension__state">{{ dimension.passed ? '达标' : '待改进' }}</span>
               <span class="dimension__score num">{{ dimension.score }}</span>
             </div>
             <p class="dimension__reason">{{ dimension.reason }}</p>
@@ -94,11 +94,10 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
     </section>
 
     <footer class="review__foot">
-      <el-button round @click="emit('back')">返回关卡地图</el-button>
+      <el-button @click="emit('back')">返回关卡地图</el-button>
       <el-button
         v-if="review.reviewStatus === 'passed'"
         type="warning"
-        round
         @click="emit('recheck', note)"
       >
         申请教师复评
@@ -106,12 +105,11 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
       <el-button
         v-else-if="review.reviewStatus === 'pending_recheck'"
         type="primary"
-        round
         @click="emit('simulate')"
       >
         模拟教师完成复审
       </el-button>
-      <el-button v-else type="primary" round @click="emit('back')">继续下一关</el-button>
+      <el-button v-else type="primary" @click="emit('back')">继续下一关</el-button>
     </footer>
   </div>
 </template>
@@ -192,7 +190,7 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
 
 .review__grade-badge {
   padding: 2px 12px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--wip);
   color: #fff;
   font-size: 14px;
@@ -242,21 +240,21 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
   background: var(--surface-2);
 }
 
-.dimension__icon {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--ok);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+.dimension__state {
+  padding: 0 7px;
+  border: 1px solid var(--ok-line);
+  border-radius: var(--r-chip);
+  background: var(--ok-bg);
+  color: #2f8a08;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
-.dimension.is-fail .dimension__icon {
-  background: var(--wip);
+.dimension.is-fail .dimension__state {
+  border-color: var(--wip-line);
+  background: var(--wip-bg);
+  color: #b35c00;
 }
 
 .dimension__main {
@@ -268,7 +266,7 @@ const statusText: Record<AiReview['reviewStatus'], string> = {
 
 .dimension__top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
 }
 

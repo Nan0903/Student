@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Bell, Star, SwitchButton, Tickets } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { platformInfo } from '@/config/nav'
 import logoImage from '@/assets/images/logo.png'
@@ -66,7 +65,6 @@ async function logout(): Promise<void> {
         <el-popover placement="bottom-start" trigger="hover" :width="240" popper-class="title-popover">
           <template #reference>
             <button class="titles" type="button">
-              <el-icon><Star /></el-icon>
               {{ profile?.titles.length ?? 0 }} 个称号
             </button>
           </template>
@@ -98,20 +96,16 @@ async function logout(): Promise<void> {
       <!-- 消息 / 待办 / 收藏 -->
       <div class="actions">
         <button class="action" type="button" title="消息">
-          <el-icon :size="18"><Bell /></el-icon>
+          消息
           <span class="action__badge num">3</span>
         </button>
         <button class="action" type="button" title="待办">
-          <el-icon :size="18"><Tickets /></el-icon>
+          待办
           <span class="action__badge num">1</span>
         </button>
-        <button class="action" type="button" title="收藏">
-          <el-icon :size="18"><Star /></el-icon>
-        </button>
+        <button class="action" type="button" title="收藏">收藏</button>
         <span class="actions__split" aria-hidden="true" />
-        <button class="action" type="button" title="退出登录" @click="logout">
-          <el-icon :size="18"><SwitchButton /></el-icon>
-        </button>
+        <button class="action" type="button" title="退出登录" @click="logout">退出</button>
       </div>
     </div>
   </header>
@@ -233,7 +227,7 @@ async function logout(): Promise<void> {
   margin-left: 4px;
   padding: 4px 10px;
   border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: rgba(255, 255, 255, 0.12);
   color: var(--ink-inv);
   font-size: 12px;
@@ -254,7 +248,7 @@ async function logout(): Promise<void> {
   margin-left: auto;
   padding: 6px 4px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: rgba(9, 62, 128, 0.16);
 }
 
@@ -266,7 +260,7 @@ async function logout(): Promise<void> {
   min-width: 92px;
   padding: 4px 16px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-chip);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -298,7 +292,7 @@ async function logout(): Promise<void> {
   line-height: 1.2;
 }
 
-/* —— 图标入口 —— */
+/* —— 文字入口 —— */
 .actions {
   display: flex;
   align-items: center;
@@ -307,30 +301,32 @@ async function logout(): Promise<void> {
 
 .action {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: var(--r-chip);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--ink-inv);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .action:hover {
-  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .action__badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  margin-left: 6px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: #ff4d4f;
   color: #fff;
   font-size: 10px;

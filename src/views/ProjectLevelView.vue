@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, UploadFilled } from '@element-plus/icons-vue'
 import AiReviewPanel from '@/components/AiReviewPanel.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LevelStepper from '@/components/LevelStepper.vue'
@@ -253,8 +252,7 @@ onUnmounted(() => {
     <!-- 顶部条 -->
     <header class="topbar panel">
       <button class="back" type="button" @click="router.push('/map')">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
+        返回关卡地图
       </button>
       <div class="topbar__title">
         <h1 class="topbar__name">{{ project.name }}</h1>
@@ -363,7 +361,7 @@ onUnmounted(() => {
       <!-- 右侧作答区 -->
       <main class="work">
         <div v-if="!activeModule" class="panel">
-          <EmptyState icon="🔒" title="该项目暂未解锁" :description="project.lockReason ?? '完成前置项目即可解锁'" />
+          <EmptyState title="该项目暂未解锁" :description="project.lockReason ?? '完成前置项目即可解锁'" />
         </div>
 
         <section v-else class="panel work__panel">
@@ -419,14 +417,12 @@ onUnmounted(() => {
                 :show-file-list="false"
                 :on-change="handleUploadChange"
               >
-                <el-icon class="upload__icon"><UploadFilled /></el-icon>
                 <p class="upload__text">把文件拖到这里，或<em>点击选择文件</em></p>
                 <p class="upload__hint">建议上传关键过程截图、测试数据表与实训报告</p>
               </el-upload>
 
               <ul v-if="files.length" class="filelist">
                 <li v-for="file in files" :key="file.id" class="file">
-                  <span class="file__icon" aria-hidden="true">📎</span>
                   <span class="file__main">
                     <span class="file__name">{{ file.name }}</span>
                     <span class="file__meta num">{{ formatFileSize(file.size) }}</span>
@@ -446,7 +442,7 @@ onUnmounted(() => {
                     title="删除"
                     @click="removeFile(file.id)"
                   >
-                    <el-icon><Delete /></el-icon>
+                    删除
                   </button>
                 </li>
               </ul>
@@ -458,16 +454,15 @@ onUnmounted(() => {
           </div>
 
           <footer class="work__foot">
-            <el-button round @click="saveDraft">保存草稿</el-button>
+            <el-button @click="saveDraft">保存草稿</el-button>
             <el-button
               v-if="activeGate === 'done'"
               type="primary"
-              round
               @click="reviewVisible = true"
             >
               查看上次评判
             </el-button>
-            <el-button type="primary" round :disabled="!canSubmit" :loading="reviewing" @click="submit">
+            <el-button type="primary" :disabled="!canSubmit" :loading="reviewing" @click="submit">
               提交本关
             </el-button>
           </footer>
@@ -504,7 +499,6 @@ onUnmounted(() => {
 
   <div v-else class="panel">
     <EmptyState
-      icon="🧭"
       title="没有找到这个实训项目"
       description="项目可能已被教师端下架，或链接不正确。"
       action-text="返回关卡地图"
@@ -534,7 +528,7 @@ onUnmounted(() => {
   gap: 6px;
   padding: 7px 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--surface);
   color: var(--ink-2);
   font-size: 13px;
@@ -782,7 +776,7 @@ onUnmounted(() => {
 
 .comment__module {
   padding: 0 7px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--brand-050);
   color: var(--brand-600);
   font-size: 11px;
@@ -905,14 +899,15 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.upload__icon {
-  font-size: 34px;
-  color: var(--brand-300);
+/* 去掉上传区图标后收紧内边距，避免中间空一大块 */
+.upload :deep(.el-upload-dragger) {
+  padding: 22px 20px;
+  border-radius: var(--r-chip);
 }
 
 .upload__text {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .upload__text em {
@@ -943,10 +938,6 @@ onUnmounted(() => {
   background: var(--surface-2);
 }
 
-.file__icon {
-  font-size: 16px;
-}
-
 .file__main {
   display: flex;
   flex-direction: column;
@@ -972,14 +963,17 @@ onUnmounted(() => {
 }
 
 .file__remove {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
   border: 0;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 

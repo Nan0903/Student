@@ -14,6 +14,15 @@ body,
   height: 100%;
 }
 
+/**
+ * 禁止页面回弹：滚到顶部或底部后继续滑动时，
+ * 整页（含吸顶头部）不再被橡皮筋效果拽着上下位移。
+ */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -21,6 +30,7 @@ body {
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.6;
+  -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -65,6 +75,13 @@ button {
 * {
   scrollbar-width: thin;
   scrollbar-color: #c8d6e8 transparent;
+}
+
+/* 内部滚动区域不把滚动链传给页面，避免连带整页位移 */
+.app-nav,
+.el-drawer__body,
+.el-dialog__body {
+  overscroll-behavior: contain;
 }
 
 *::-webkit-scrollbar {
@@ -154,7 +171,7 @@ button {
   align-items: center;
   gap: 5px;
   padding: 2px 10px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   font-size: 12px;
   font-weight: 600;
   line-height: 20px;

@@ -13,8 +13,8 @@ const router = useRouter()
         你访问的页面可能已经下架或链接有误。回到成长中心，那里一定还有没通关的关卡。
       </p>
       <div class="notfound__actions">
-        <el-button type="primary" round @click="router.push('/growth')">回到成长中心</el-button>
-        <el-button round @click="router.push('/map')">去看关卡地图</el-button>
+        <el-button type="primary" @click="router.push('/growth')">回到成长中心</el-button>
+        <el-button @click="router.push('/map')">去看关卡地图</el-button>
       </div>
     </div>
   </div>

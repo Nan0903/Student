@@ -9,8 +9,8 @@ import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
-import { tierLabel, tierOrder, tierSubtitle } from '@/utils/format'
-import type { Position, SkillNode } from '@/types'
+import { tierLabel, tierOrder } from '@/utils/format'
+import type { Position, PositionView, SkillNode } from '@/types'
 
 const router = useRouter()
 const positionStore = usePositionStore()
@@ -22,23 +22,33 @@ const drawerVisible = ref(false)
 const drawerPosition = ref<Position | null>(null)
 
 const loading = computed(() => positionStore.loading || skillStore.loading || projectStore.loading)
-const topPositions = computed(() => positionStore.rankedPositions.slice(0, 4))
+/** 我的岗位：只展示推荐度最高的三个 */
+const topPositions = computed(() => positionStore.rankedPositions.slice(0, 3))
 const currentPosition = computed(() => positionStore.currentPosition)
 
-/** 岗位 → 关联实训项目 → 技能节点，按体系分组 */
+/** 岗位 → 岗位技能点，按体系分组（岗位与技能点是多对多，人工维护在 Position.skillIds） */
 const drawerGroups = computed(() => {
   const position = drawerPosition.value
   if (!position) return []
-  const projectIds = projectStore.projects
-    .filter((project) => project.positionId === position.id)
-    .map((project) => project.id)
-  const nodes = skillStore.nodesByProject(projectIds)
+  const nodes = position.skillIds
+    .map((id) => skillStore.getNode(id))
+    .filter((node): node is SkillNode => node !== null)
   return skillStore.systems
     .map((system) => ({
       system,
       nodes: nodes.filter((node) => node.systemId === system.id),
     }))
     .filter((group) => group.nodes.length > 0)
+})
+
+/** 岗位技能点整体进度 */
+const drawerProgress = computed(() => {
+  const position = drawerPosition.value
+  if (!position) return { total: 0, done: 0, percent: 0 }
+  const nodes = position.skillIds
+    .map((id) => skillStore.getNode(id))
+    .filter((node): node is SkillNode => node !== null)
+  return skillStore.progressOfNodes(nodes)
 })
 
 /** 实训进度概览：按层级统计已完成 / 总数 */
@@ -48,34 +58,27 @@ const tierProgress = computed(() =>
     return {
       tier,
       name: tierLabel[tier],
-      subtitle: tierSubtitle[tier],
       done: list.filter((project) => project.status === 'completed').length,
       total: list.length,
     }
   }),
 )
 
-function openPosition(position: Position): void {
+function openPosition(position: Position | PositionView): void {
   drawerPosition.value = position
   drawerVisible.value = true
 }
 
-/** 未点亮的技能 → 关卡地图，并带上岗位与技能筛选参数 */
+/** 技能点 → 关卡地图，并带上岗位与技能筛选参数 */
 function goSkill(node: SkillNode): void {
-  if (node.status !== 'locked') {
-    ElMessage.info(`「${node.name}」已点亮，可进入实训复习`)
+  if (skillStore.progressOf(node).percent >= 100) {
+    ElMessage.info(`「${node.name}」已学成，可进入实训复习`)
   }
   drawerVisible.value = false
   void router.push({
     path: '/map',
     query: { position: drawerPosition.value?.id ?? '', skill: node.id },
   })
-}
-
-function nodeClasses(node: SkillNode): string {
-  if (node.status === 'mastered') return 'is-mastered'
-  if (node.status === 'active') return 'is-active'
-  return 'is-locked'
 }
 
 onMounted(async () => {
@@ -87,18 +90,15 @@ onMounted(async () => {
 <template>
   <div class="growth">
     <PageTitle
-      eyebrow="Growth Center"
       title="成长中心"
-      subtitle="先看清自己在哪，再决定今天闯哪一关。"
     >
       <template #extra>
         <div v-if="currentPosition" class="current-chip">
-          <span class="current-chip__icon" aria-hidden="true">{{ currentPosition.icon }}</span>
           <span class="current-chip__text">
             <span class="current-chip__label">当前岗位</span>
             <span class="current-chip__name">{{ currentPosition.name }}</span>
           </span>
-          <span class="current-chip__match num">{{ currentPosition.matchRate }}%</span>
+          <span class="current-chip__match num">{{ currentPosition.percent }}%</span>
         </div>
       </template>
     </PageTitle>
@@ -111,7 +111,6 @@ onMounted(async () => {
           我的岗位
         </div>
         <div class="panel-head__extra">
-          <span class="hint">按已点亮技能数自动排序</span>
           <el-button text type="primary" @click="router.push('/positions')">
             查看全部岗位 →
           </el-button>
@@ -131,9 +130,8 @@ onMounted(async () => {
         </div>
         <EmptyState
           v-else
-          icon="🎯"
           title="还没有推荐岗位"
-          description="先完成一个基础实训项目，系统会按你的技能点亮情况推荐岗位。"
+          description="先完成一个基础实训项目，系统会按你的技能点进度推荐岗位。"
           action-text="去闯关地图"
           @action="router.push('/map')"
         />
@@ -147,13 +145,11 @@ onMounted(async () => {
           <span class="panel-title-mark" />
           实训进度概览
         </div>
-        <span class="hint">按实训层级统计已完成项目</span>
       </header>
       <div class="panel-body">
         <div class="tier-grid">
           <article v-for="item in tierProgress" :key="item.tier" class="tier" :class="`tier--${item.tier}`">
             <p class="tier__name">{{ item.name }}</p>
-            <p class="tier__sub">{{ item.subtitle }}</p>
             <p class="tier__value">
               <span class="num">{{ item.done }}</span>
               <span class="tier__slash">/</span>
@@ -169,10 +165,12 @@ onMounted(async () => {
     <el-drawer v-model="drawerVisible" size="480px" :with-header="true">
       <template #header>
         <div class="drawer-head">
-          <span class="drawer-head__icon" aria-hidden="true">{{ drawerPosition?.icon }}</span>
           <span>
             <span class="drawer-head__title">{{ drawerPosition?.name }}</span>
-            <span class="drawer-head__sub">岗位技能树 · 灰色节点点击可前往实训</span>
+            <span class="drawer-head__sub">
+              由 {{ drawerProgress.total }} 个技能点构成 · 整体进度
+              {{ drawerProgress.percent }}%
+            </span>
           </span>
         </div>
       </template>
@@ -183,25 +181,24 @@ onMounted(async () => {
             <span class="drawer-group__dot" :style="{ background: group.system.color }" />
             <span class="drawer-group__name">{{ group.system.name }}</span>
             <span class="drawer-group__count num">
-              {{ group.nodes.filter((node) => node.status !== 'locked').length }}/{{ group.nodes.length }}
+              {{ skillStore.progressOfNodes(group.nodes).percent }}%
             </span>
           </header>
           <ul class="drawer-nodes">
             <li v-for="node in group.nodes" :key="node.id">
-              <button
-                class="drawer-node"
-                :class="nodeClasses(node)"
-                type="button"
-                @click="goSkill(node)"
-              >
-                <span class="drawer-node__icon" aria-hidden="true">{{ node.icon }}</span>
+              <button class="drawer-node" type="button" @click="goSkill(node)">
                 <span class="drawer-node__name">{{ node.name }}</span>
-                <span class="drawer-node__state">
-                  <template v-if="node.status === 'mastered'">已精通</template>
-                  <template v-else-if="node.status === 'active'">
-                    点亮中 <span class="num">{{ node.progress.current }}/{{ node.progress.total }}</span>
-                  </template>
-                  <template v-else>未解锁</template>
+                <span class="drawer-node__bar">
+                  <span
+                    class="drawer-node__bar-fill"
+                    :style="{
+                      width: `${skillStore.progressOf(node).percent}%`,
+                      background: group.system.color,
+                    }"
+                  />
+                </span>
+                <span class="drawer-node__percent num">
+                  {{ skillStore.progressOf(node).percent }}%
                 </span>
               </button>
             </li>
@@ -210,9 +207,8 @@ onMounted(async () => {
 
         <EmptyState
           v-if="!drawerGroups.length"
-          icon="🌱"
-          title="该岗位暂无关联技能节点"
-          description="技能体系由教师端配置，配置完成后会在这里展示。"
+          title="该岗位暂未关联技能点"
+          description="岗位与技能点的关联关系由教师端配置，配置完成后会在这里展示。"
         />
       </div>
     </el-drawer>
@@ -235,11 +231,6 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.hint {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
 /* —— 当前岗位 chip —— */
 .current-chip {
   display: flex;
@@ -247,12 +238,8 @@ onMounted(async () => {
   gap: 12px;
   padding: 8px 16px;
   border: 1px solid var(--brand-100);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--brand-050);
-}
-
-.current-chip__icon {
-  font-size: 20px;
 }
 
 .current-chip__text {
@@ -324,12 +311,6 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-.tier__sub {
-  margin-bottom: 12px;
-  color: var(--ink-2);
-  font-size: 12px;
-}
-
 .tier__value {
   display: flex;
   align-items: baseline;
@@ -358,10 +339,6 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.drawer-head__icon {
-  font-size: 22px;
 }
 
 .drawer-head__title {
@@ -432,40 +409,35 @@ onMounted(async () => {
   background: var(--brand-050);
 }
 
-.drawer-node__icon {
-  font-size: 18px;
-}
-
 .drawer-node__name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
 }
 
-.drawer-node__state {
-  margin-left: auto;
-  font-size: 11.5px;
-  color: var(--ink-3);
+.drawer-node__bar {
+  width: 96px;
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--r-bar);
+  background: var(--line-soft);
 }
 
-.drawer-node.is-mastered .drawer-node__state {
-  color: #2f8a08;
-  font-weight: 600;
+.drawer-node__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-bar);
 }
 
-.drawer-node.is-active .drawer-node__state {
-  color: var(--brand-600);
-  font-weight: 600;
-}
-
-.drawer-node.is-locked {
-  background: var(--lock-bg);
-  border-color: var(--lock-line);
-}
-
-.drawer-node.is-locked .drawer-node__icon,
-.drawer-node.is-locked .drawer-node__name {
-  color: var(--ink-3);
-  filter: grayscale(0.6);
+.drawer-node__percent {
+  width: 36px;
+  flex: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
 }
 
 

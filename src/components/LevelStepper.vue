@@ -25,9 +25,7 @@ const emit = defineEmits<{ select: [moduleId: string] }>()
         @click="emit('select', state.module.id)"
       >
         <span class="stepper__index num">
-          <template v-if="state.gate === 'done'">✓</template>
-          <template v-else-if="state.gate === 'locked'">🔒</template>
-          <template v-else>{{ index + 1 }}</template>
+          {{ index + 1 }}
         </span>
         <span class="stepper__label">{{ state.module.name }}</span>
       </button>
@@ -58,7 +56,7 @@ const emit = defineEmits<{ select: [moduleId: string] }>()
   gap: 8px;
   padding: 6px 10px;
   border: 1px solid transparent;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-2);
   font-size: 13px;
@@ -116,7 +114,7 @@ const emit = defineEmits<{ select: [moduleId: string] }>()
   min-width: 12px;
   height: 2px;
   margin: 0 4px;
-  border-radius: var(--r-pill);
+  border-radius: 1px;
   background: var(--line);
 }
 

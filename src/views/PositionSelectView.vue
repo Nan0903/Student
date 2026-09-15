@@ -8,11 +8,13 @@ import PositionCard from '@/components/PositionCard.vue'
 import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
+import { useSkillStore } from '@/stores/skill'
 import type { Position, PositionDifficulty } from '@/types'
 
 const router = useRouter()
 const positionStore = usePositionStore()
 const projectStore = useProjectStore()
+const skillStore = useSkillStore()
 const chat = useChatStore()
 
 const pickedId = ref('')
@@ -71,7 +73,7 @@ async function confirm(): Promise<void> {
 
 onMounted(async () => {
   chat.contextLabel = '岗位选择 · 选择你的目标岗位'
-  await Promise.all([positionStore.load(), projectStore.load()])
+  await Promise.all([positionStore.load(), projectStore.load(), skillStore.load()])
   const current = positionStore.currentPosition
   if (current) pickedId.value = current.id
 })
@@ -80,15 +82,12 @@ onMounted(async () => {
 <template>
   <div class="positions">
     <PageTitle
-      eyebrow="Position"
       title="选择你的目标岗位"
-      subtitle="选择一个你感兴趣的岗位，开始针对性的学习和实训。"
     />
 
     <!-- 未达成前置条件 -->
     <section v-if="!preconditionMet" class="panel">
       <EmptyState
-        icon="🧱"
         title="先完成 1 个基础实训项目"
         description="岗位选择需要先完成至少 1 个基础实训项目的全部关卡，完成后这里会解锁岗位推荐与切换。"
         action-text="去完成基础实训"
@@ -129,7 +128,6 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-        <p class="filter__note">推荐岗位按技能树匹配度自动排序，匹配度越高越适合现在开始。</p>
       </div>
 
       <!-- 岗位网格 -->
@@ -146,7 +144,6 @@ onMounted(async () => {
       </div>
       <div v-else class="panel">
         <EmptyState
-          icon="🔍"
           title="没有符合条件的岗位"
           description="换个方向或难度试试，也可以直接浏览全部岗位。"
           action-text="重置筛选"
@@ -169,10 +166,9 @@ onMounted(async () => {
           <template v-else>还没有选择岗位</template>
         </div>
         <div class="actionbar__buttons">
-          <el-button round @click="pickedId = ''">取消</el-button>
+          <el-button @click="pickedId = ''">取消</el-button>
           <el-button
             type="primary"
-            round
             :disabled="!pickedPosition || isCurrent"
             @click="confirm"
           >
@@ -222,7 +218,7 @@ onMounted(async () => {
 .filter-tag {
   padding: 5px 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--surface);
   color: var(--ink-2);
   font-size: 12.5px;
@@ -240,13 +236,6 @@ onMounted(async () => {
   border-color: var(--brand-500);
   background: var(--brand-050);
   color: var(--brand-600);
-}
-
-.filter__note {
-  padding-top: 10px;
-  border-top: 1px dashed var(--line);
-  color: var(--ink-3);
-  font-size: 12px;
 }
 
 .grid {

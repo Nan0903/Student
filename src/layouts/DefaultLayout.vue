@@ -20,7 +20,7 @@ import AiAssistantDock from '@/components/AiAssistantDock.vue'
       </main>
     </div>
 
-    <AiAssistantDock mode="floating" />
+    <AiAssistantDock />
   </div>
 </template>
 

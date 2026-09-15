@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { chatQuickQuestions } from '@/mock/data'
 import { useChatStore } from '@/stores/chat'
-
-const props = withDefaults(defineProps<{ mode?: 'docked' | 'floating' }>(), { mode: 'floating' })
+import { getAssistantSpot, setAssistantSpot } from '@/utils/storage'
 
 const route = useRoute()
 const chat = useChatStore()
@@ -18,9 +17,114 @@ const canSubmit = computed(
   () => draft.value.trim().length > 0 && !overLimit.value && chat.canSend,
 )
 
-const docked = computed(() => props.mode === 'docked')
-/** 岗位选择页底部有固定操作条，悬浮球上移避让，避免遮挡按钮 */
-const raised = computed(() => props.mode === 'floating' && route.name === 'positions')
+/* -------------------------------------------------------------------------- */
+/* 悬浮球：圆形、可任意拖动，位置记在本地                                         */
+/* -------------------------------------------------------------------------- */
+
+interface Spot {
+  x: number
+  y: number
+}
+
+const FAB_SIZE = 58
+const PANEL_W = 360
+const PANEL_H = 560
+const EDGE = 18
+
+const viewport = ref({ w: window.innerWidth, h: window.innerHeight })
+
+/** 默认停在右下角；岗位选择页底部有固定操作条，稍微上移避让 */
+function defaultSpot(): Spot {
+  const lift = route.name === 'positions' ? 84 : 0
+  return {
+    x: viewport.value.w - FAB_SIZE - EDGE,
+    y: viewport.value.h - FAB_SIZE - EDGE - lift,
+  }
+}
+
+function clampSpot(spot: Spot): Spot {
+  const maxX = Math.max(EDGE, viewport.value.w - FAB_SIZE - EDGE)
+  const maxY = Math.max(EDGE, viewport.value.h - FAB_SIZE - EDGE)
+  return {
+    x: Math.min(Math.max(EDGE, spot.x), maxX),
+    y: Math.min(Math.max(EDGE, spot.y), maxY),
+  }
+}
+
+const stored = getAssistantSpot<Spot>()
+const spot = ref<Spot>(
+  stored && Number.isFinite(stored.x) && Number.isFinite(stored.y)
+    ? clampSpot(stored)
+    : defaultSpot(),
+)
+
+const dragging = ref(false)
+/** 拖动结束会紧跟一次 click，这里把它挡掉，避免误触展开/收起 */
+let dragged = false
+let origin = { pointerX: 0, pointerY: 0, x: 0, y: 0 }
+
+const fabStyle = computed(() => ({ left: `${spot.value.x}px`, top: `${spot.value.y}px` }))
+
+/** 面板贴着悬浮球展开：下方放得下就往下，否则往上，并保证不出屏 */
+const panelStyle = computed(() => {
+  const { w, h } = viewport.value
+  const height = Math.min(PANEL_H, h - 2 * EDGE - 20)
+  const below = spot.value.y + FAB_SIZE + 12 + height <= h - EDGE
+  const top = below
+    ? spot.value.y + FAB_SIZE + 12
+    : Math.max(EDGE, spot.value.y - height - 12)
+  const preferRight = spot.value.x + FAB_SIZE / 2 > w / 2
+  const rawLeft = preferRight ? spot.value.x + FAB_SIZE - PANEL_W : spot.value.x
+  const left = Math.min(Math.max(EDGE, rawLeft), Math.max(EDGE, w - PANEL_W - EDGE))
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${PANEL_W}px`,
+    height: `${height}px`,
+  }
+})
+
+function onFabPointerDown(event: PointerEvent): void {
+  const element = event.currentTarget as HTMLElement
+  element.setPointerCapture(event.pointerId)
+  dragging.value = true
+  dragged = false
+  origin = {
+    pointerX: event.clientX,
+    pointerY: event.clientY,
+    x: spot.value.x,
+    y: spot.value.y,
+  }
+}
+
+function onFabPointerMove(event: PointerEvent): void {
+  if (!dragging.value) return
+  const dx = event.clientX - origin.pointerX
+  const dy = event.clientY - origin.pointerY
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragged = true
+  spot.value = clampSpot({ x: origin.x + dx, y: origin.y + dy })
+}
+
+function onFabPointerUp(event: PointerEvent): void {
+  if (!dragging.value) return
+  dragging.value = false
+  const element = event.currentTarget as HTMLElement
+  element.releasePointerCapture?.(event.pointerId)
+  if (dragged) setAssistantSpot(spot.value)
+}
+
+function onFabClick(): void {
+  if (dragged) {
+    dragged = false
+    return
+  }
+  chat.toggle()
+}
+
+function onViewportResize(): void {
+  viewport.value = { w: window.innerWidth, h: window.innerHeight }
+  spot.value = clampSpot(spot.value)
+}
 
 async function submit(): Promise<void> {
   if (!canSubmit.value) return
@@ -66,15 +170,22 @@ watch(
 onMounted(() => {
   void chat.init()
   scrollToEnd()
+  window.addEventListener('resize', onViewportResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onViewportResize)
 })
 </script>
 
 <template>
-  <div
-    class="assistant"
-    :class="[docked ? 'assistant--docked' : 'assistant--floating', { 'assistant--raised': raised }]"
-  >
-    <section v-show="docked || !chat.collapsed" class="assistant__panel" aria-label="AI 助教对话框">
+  <div class="assistant">
+    <section
+      v-show="!chat.collapsed"
+      class="assistant__panel"
+      :style="panelStyle"
+      aria-label="AI 助教对话框"
+    >
       <header class="assistant__head">
         <div class="assistant__title">
           <span class="assistant__dot" aria-hidden="true" />
@@ -82,16 +193,15 @@ onMounted(() => {
         </div>
         <div class="assistant__head-actions">
           <button class="assistant__icon-btn" type="button" title="清空对话" @click="chat.clear()">
-            ⟲
+            清空
           </button>
           <button
-            v-if="!docked"
             class="assistant__icon-btn"
             type="button"
             title="收起"
             @click="chat.toggle(false)"
           >
-            ✕
+            收起
           </button>
         </div>
       </header>
@@ -171,7 +281,6 @@ onMounted(() => {
           <el-button
             type="primary"
             size="small"
-            round
             :disabled="!canSubmit"
             :loading="chat.sending"
             @click="submit"
@@ -188,14 +297,20 @@ onMounted(() => {
     </section>
 
     <button
-      v-if="!docked"
-      class="assistant__ball"
+      class="assistant__fab"
+      :class="{ 'is-dragging': dragging }"
+      :style="fabStyle"
       type="button"
+      title="AI 助教（可拖动）"
+      aria-label="AI 助教"
       :aria-expanded="!chat.collapsed"
-      @click="chat.toggle()"
+      @pointerdown="onFabPointerDown"
+      @pointermove="onFabPointerMove"
+      @pointerup="onFabPointerUp"
+      @pointercancel="onFabPointerUp"
+      @click="onFabClick"
     >
-      <span aria-hidden="true">💬</span>
-      <span class="assistant__ball-text">AI 助教</span>
+      <span class="assistant__fab-text" aria-hidden="true">AI</span>
     </button>
   </div>
 </template>
@@ -206,64 +321,72 @@ onMounted(() => {
 }
 
 /* —— 常驻模式：成长中心右侧栏 —— */
-.assistant--docked .assistant__panel {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - var(--header-h) - var(--nav-h) - 48px);
-  max-height: 720px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--sh-2);
-  overflow: hidden;
-}
-
-/* —— 浮动模式：右下角悬浮球 —— */
-.assistant--floating {
+/* —— 浮动层：铺满视口但不挡操作，只有面板和悬浮球可点 —— */
+.assistant {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  inset: 0;
   z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12px;
+  pointer-events: none;
 }
 
-.assistant--floating.assistant--raised {
-  bottom: 104px;
-}
-
-.assistant--floating .assistant__panel {
+.assistant__panel {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  width: 360px;
-  height: min(560px, calc(100vh - 160px));
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--sh-3);
   overflow: hidden;
+  pointer-events: auto;
 }
 
-.assistant__ball {
-  display: inline-flex;
+/* —— 圆形悬浮球：可拖动到任意位置 —— */
+.assistant__fab {
+  position: absolute;
+  display: grid;
+  place-items: center;
   align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  padding: 0;
   border: 0;
-  border-radius: var(--r-pill);
-  background: linear-gradient(135deg, var(--brand-600), var(--brand-500));
+  border-radius: 50%;
+  background:
+    radial-gradient(120% 120% at 30% 20%, rgba(255, 255, 255, 0.28), transparent 55%),
+    linear-gradient(135deg, var(--brand-500), var(--brand-700));
   color: #fff;
-  font-size: 14px;
-  font-weight: 700;
+  font-family: inherit;
   cursor: pointer;
-  box-shadow: var(--sh-2);
-  transition: transform 0.18s ease;
+  box-shadow:
+    0 10px 22px rgba(18, 82, 160, 0.3),
+    0 0 0 4px rgba(30, 123, 232, 0.12);
+  touch-action: none;
+  pointer-events: auto;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.assistant__ball:hover {
-  transform: translateY(-2px);
+.assistant__fab:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 28px rgba(18, 82, 160, 0.38),
+    0 0 0 5px rgba(30, 123, 232, 0.16);
+}
+
+.assistant__fab.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.06);
+}
+
+/* 圆球上的标识文字 */
+.assistant__fab-text {
+  color: #fff;
+  font-family: var(--font-num);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(9, 62, 128, 0.35);
 }
 
 .assistant__head {
@@ -297,13 +420,15 @@ onMounted(() => {
 }
 
 .assistant__icon-btn {
-  width: 26px;
   height: 26px;
+  padding: 0 9px;
   border: 0;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-3);
+  font-family: inherit;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -431,7 +556,7 @@ onMounted(() => {
   align-self: flex-start;
   padding: 2px 10px;
   border: 1px solid var(--brand-300);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: #fff;
   color: var(--brand-600);
   font-size: 12px;
@@ -491,7 +616,7 @@ onMounted(() => {
 .quick {
   padding: 7px 11px;
   border: 1px dashed var(--brand-300);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--brand-600);
   font-size: 12px;

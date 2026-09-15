@@ -25,7 +25,9 @@ export function selectPosition(positionId: string): Promise<Position[]> {
   })
 }
 
-/** 岗位所需技能节点 id（用于成长中心的「岗位技能树」抽屉） */
+/** 岗位由哪些技能点构成（用于成长中心的「岗位技能树」抽屉） */
 export function fetchPositionSkills(positionId: string): Promise<string[]> {
-  return mockRequest({ resolve: () => [positionId] })
+  return mockRequest({
+    resolve: () => positions.find((item) => item.id === positionId)?.skillIds ?? [],
+  })
 }

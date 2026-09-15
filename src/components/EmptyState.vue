@@ -1,6 +1,5 @@
 <script setup lang="ts">
 defineProps<{
-  icon?: string
   title: string
   description?: string
   actionText?: string
@@ -11,10 +10,10 @@ const emit = defineEmits<{ action: [] }>()
 
 <template>
   <div class="empty">
-    <span class="empty__icon" aria-hidden="true">{{ icon ?? '🗂️' }}</span>
+    <span class="empty__mark" aria-hidden="true" />
     <p class="empty__title">{{ title }}</p>
     <p v-if="description" class="empty__desc">{{ description }}</p>
-    <el-button v-if="actionText" type="primary" round @click="emit('action')">
+    <el-button v-if="actionText" type="primary" @click="emit('action')">
       {{ actionText }}
     </el-button>
     <slot />
@@ -31,9 +30,11 @@ const emit = defineEmits<{ action: [] }>()
   text-align: center;
 }
 
-.empty__icon {
-  font-size: 34px;
-  opacity: 0.75;
+.empty__mark {
+  width: 28px;
+  height: 3px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
 }
 
 .empty__title {

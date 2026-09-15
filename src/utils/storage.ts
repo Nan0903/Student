@@ -4,6 +4,7 @@ const TOKEN_KEY = 'spu.student.token'
 const PROFILE_KEY = 'spu.student.profile'
 const DRAFT_KEY = 'spu.student.draft'
 const CHAT_KEY = 'spu.student.chat'
+const ASSISTANT_KEY = 'spu.student.assistant'
 
 function read<T>(key: string): T | null {
   try {
@@ -47,3 +48,7 @@ export const setDrafts = (drafts: unknown): void => write(DRAFT_KEY, drafts)
 
 export const getChatCache = <T>(): T | null => read<T>(CHAT_KEY)
 export const setChatCache = (messages: unknown): void => write(CHAT_KEY, messages)
+
+/** AI 悬浮球位置：用户拖动后记住，下次进来还在原地 */
+export const getAssistantSpot = <T>(): T | null => read<T>(ASSISTANT_KEY)
+export const setAssistantSpot = (value: unknown): void => write(ASSISTANT_KEY, value)
