@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useEnumStore } from '@/stores/enums'
-import { projectStatusLabel, projectStatusTone } from '@/utils/format'
+import { projectStatusEnumCode, projectStatusLabel, projectStatusTone } from '@/utils/format'
 import type { Project, ProjectSkillTag } from '@/types'
 
 const props = defineProps<{
@@ -16,27 +16,19 @@ const emit = defineEmits<{ open: [project: Project] }>()
 
 const enums = useEnumStore()
 
-/** 前端项目状态 → 后端字典 code（locked 是前端的锁定态，后端字典里没有） */
-const STATUS_CODE: Record<string, string> = {
-  not_started: 'NOT_STARTED',
-  in_progress: 'IN_PROGRESS',
-  submitted: 'SUBMITTED',
-  completed: 'COMPLETED',
-}
-
 const tone = computed(() => projectStatusTone[props.project.status])
 // 状态文案优先取后端字典，字典没加载到就用本地兜底
 const label = computed(() =>
   enums.label(
     'student_project_status',
-    STATUS_CODE[props.project.status],
+    projectStatusEnumCode[props.project.status],
     projectStatusLabel[props.project.status],
   ),
 )
 const locked = computed(() => props.project.status === 'locked')
 const score = computed(() => props.project.score)
 
-/** 固定卡片高度，标签最多铺两行，超出折成 +N */
+/** 卡片高度固定、技能点最多铺两行：只展示前 5 个，其余折成「+N」 */
 const MAX_TAGS = 5
 const visibleSkills = computed(() => (props.skills ?? []).slice(0, MAX_TAGS))
 const hiddenCount = computed(() => Math.max(0, (props.skills?.length ?? 0) - MAX_TAGS))

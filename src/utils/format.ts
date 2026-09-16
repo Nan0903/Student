@@ -46,6 +46,18 @@ export const projectStatusTone: Record<ProjectStatus, 'todo' | 'wip' | 'done' | 
   locked: 'lock',
 }
 
+/**
+ * 前端项目状态 → 后端字典 code（用于取 `/enums` 的中文文案）。
+ * `locked` 是前端的锁定态，后端字典里没有对应 code。
+ */
+export const projectStatusEnumCode: Record<ProjectStatus, string | undefined> = {
+  not_started: 'NOT_STARTED',
+  in_progress: 'IN_PROGRESS',
+  submitted: 'SUBMITTED',
+  completed: 'COMPLETED',
+  locked: undefined,
+}
+
 export const moduleStatusLabel: Record<ModuleStatus, string> = {
   draft: '草稿',
   submitted: '待评判',

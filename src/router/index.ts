@@ -50,6 +50,13 @@ const routes: RouteRecordRaw[] = [
         meta: { nav: 'map', title: '关卡详情' },
       },
       {
+        // 历史记录入口在关卡地图的顶部工具条上，因此导航高亮跟地图保持一致
+        path: 'map/history',
+        name: 'map-history',
+        component: () => import('@/views/HistoryView.vue'),
+        meta: { nav: 'map', title: '历史记录' },
+      },
+      {
         path: 'positions',
         name: 'positions',
         component: () => import('@/views/PositionSelectView.vue'),

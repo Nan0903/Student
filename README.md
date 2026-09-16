@@ -5,7 +5,7 @@
 > 选岗位 → 看技能树 → 逐关闯关 → 提交作答 → AI 评审 → 申请教师复核 → 认证
 
 数据来自同仓库的后端 `training_platform`（FastAPI），前端不再依赖本地假数据：
-岗位推荐、技能树进度、实训项目、闯关作答、AI 评审与 AI 问答都走真实接口；
+岗位推荐、技能树进度、实训项目、闯关作答、AI 评审、AI 问答与历史记录都走真实接口；
 只有**认证中心**（后端暂无证书接口）和 AI 助教的**快捷提问文案**仍是本地 mock。
 
 ## 技术栈
@@ -76,6 +76,8 @@ npm run preview     # 本地预览 dist/ 的构建结果
 | 保存作答（批量草稿） | `PUT /attempts/{id}/answers` |
 | 整单提交 / 撤回 / 异议 | `POST /attempts/{id}/submit`、`POST /submissions/{id}/withdraw`、`POST /submissions/{id}/objection` |
 | AI 评审（提交后自动触发） | `POST /submissions/{id}/ai-review` |
+| 历史记录：提交记录 / 评审明细 | `GET /submissions?student_id=`（分页 + 项目筛选）、`GET /submissions/{id}/reviews` |
+| 评审人姓名（评审明细里显示教师） | `GET /users/{id}` |
 | 关卡附件 | `POST /file-assets/upload`、`GET/POST/DELETE /attempts/{aid}/stages/{sid}/files[/{asset_id}]` |
 | 文件下载 | `GET /file-assets/{id}/download`（文件流，不包统一响应体） |
 | 岗位项目进度 | `GET /students/{id}/job-project-progress` |
@@ -115,6 +117,7 @@ Student/
 │  │  ├─ position.ts             # 岗位推荐、选岗、岗位项目进度
 │  │  ├─ skill.ts                # 技能树与技能点进度
 │  │  ├─ project.ts              # 项目与关卡、作答保存、整单提交、AI 评审、附件
+│  │  ├─ history.ts              # 历史记录：跨项目提交记录与每次提交的评审明细
 │  │  ├─ file.ts                 # 文件上传（带进度）、下载地址、关卡附件挂/摘
 │  │  ├─ qa.ts                   # AI 助教：会话、SSE 流式提问、用量统计
 │  │  ├─ certification.ts        # 认证中心（后端暂无接口，走本地 mock）
@@ -175,6 +178,7 @@ Student/
 │     ├─ SkillTreeView.vue       # 技能树：四大体系 + 节点详情
 │     ├─ LevelMapView.vue        # 关卡地图：岗位筛选 + 三层级分组
 │     ├─ ProjectLevelView.vue    # 关卡详情：步骤条、作答、附件、提交、评审结果、项目资料
+│     ├─ HistoryView.vue         # 历史记录：提交记录（项目筛选 + 评审展开）、项目闯关记录
 │     ├─ PositionSelectView.vue  # 岗位选择：筛选、匹配度排序、确认切换
 │     ├─ CertificationView.vue   # 认证中心：认证条件、证书列表、鉴定书预览
 │     └─ NotFoundView.vue        # 404 兜底
@@ -199,6 +203,7 @@ Student/
 | `/skill-tree` | 技能树 | 四大体系，节点可点开详情 |
 | `/map` | 关卡地图 | 按岗位筛选、按层级分组，支持从其它页面带筛选参数进入 |
 | `/map/project/:projectId` | 关卡详情 | 主导航高亮仍停留在「关卡地图」 |
+| `/map/history` | 历史记录 | 从关卡地图顶部工具条进入（无独立导航项），主导航高亮仍是「关卡地图」 |
 | `/positions` | 岗位选择 | 完成 1 个基础项目后可切换目标岗位 |
 | `/certification` | 认证中心 | 认证条件、证书状态、鉴定书预览（数据仍为 mock） |
 | `/:pathMatch(.*)*` | 404 | 兜底页 |
@@ -253,5 +258,6 @@ API（api/*.ts）             ← 接口签名与后端字段映射（snake_case
 - 只实现学生端。教师端未开放，入口页点击后会给出提示。
 - **AI 评审**走后端真链路：整单提交后自动调用 `POST /submissions/{id}/ai-review`（后端召回该项目的评分标准 → 大模型打分 → 落库结算）；失败时前端降级为「待评审」并把原因显示在判分面板里。
 - **AI 助教**接后端 `/qa`：会话与消息落库、SSE 流式回答、失败可重试；一期不接知识库检索，回答会带「未接入知识库检索」的提示。
+- **历史记录**（`/map/history`）走真链路：提交记录按项目筛选 + 分页，展开某一行时才去拉该次提交的 AI / 教师评审；项目闯关记录展示状态、关卡进度与最高分，已通过的项目可直接「重新挑战」（后端新建一轮闯关，历史成绩保留在最高分字段里，前端不做数据清理）。
 - **认证中心**与顶栏的消息/待办角标仍是本地 mock —— 后端还没有证书与通知接口。
 - 技能鉴定书为静态预览样式，暂不支持生成与下载。

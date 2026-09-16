@@ -130,8 +130,12 @@ onMounted(async () => {
 
 <template>
   <div class="level-map">
-    <!-- 页面标题已去掉，状态图例保留在顶部工具条里 -->
+    <!-- 顶部工具条：页面级标题已按设计移除，只留历史记录入口与状态图例 -->
     <div class="page-toolbar">
+      <!-- 只能从关卡地图进入历史记录，页面里没有独立导航项 -->
+      <button class="history-entry" type="button" @click="router.push('/map/history')">
+        历史记录
+      </button>
       <ul class="legend">
         <li v-for="item in legend" :key="item.tone" class="legend__item">
           <span class="legend__dot" :class="`legend__dot--${item.tone}`" />
@@ -233,6 +237,26 @@ onMounted(async () => {
   border-radius: var(--r-chip);
   background: var(--surface);
   box-shadow: var(--sh-1);
+}
+
+/* 顶部工具条里的「历史记录」入口（跳转 /map/history） */
+.history-entry {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.history-entry:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-050);
+  color: var(--brand-600);
 }
 
 .legend__item {
