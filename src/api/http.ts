@@ -50,7 +50,7 @@ interface Envelope {
 let redirecting = false
 
 /** 401 兜底：清空登录态并回到登录页 */
-function handleUnauthorized(): void {
+export function handleUnauthorized(): void {
   clearAuth()
   if (redirecting) return
   redirecting = true
