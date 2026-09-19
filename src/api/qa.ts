@@ -1,7 +1,10 @@
 /**
  * AI 助教问答（对接 training_platform 的 /qa 接口）。
  *
- * - 会话：`POST/GET /qa/sessions`，前端只负责「进来时确保有一个可用会话」
+ * - 会话列表：`GET /qa/sessions?student_id=&page_size=20`
+ * - 会话详情：`GET /qa/sessions/{id}?student_id=` —— 默认带最近 30 条消息，按时间正序
+ * - 历史翻页：`GET /qa/sessions/{id}/messages?student_id=&before_id=` —— 不带 before_id 取最新一屏，
+ *   响应里的 `next_before_id` 就是下一页游标
  * - 提问：`POST /qa/sessions/{id}/ask`，默认 SSE 流式（meta → delta* → done / error），
  *   失败可退回 `stream=false` 一次性返回
  * - 用量：`GET /qa/usage`（后端只统计不限制）
@@ -9,7 +12,7 @@
 
 import { API_BASE_URL } from '@/config/env'
 import { getToken } from '@/utils/storage'
-import { ApiError, get, post, type Page } from './http'
+import { ApiError, del, get, patch, post, type Page } from './http'
 import { requireStudentId } from './session'
 
 export interface QaMessage {
@@ -18,6 +21,33 @@ export interface QaMessage {
   content: string
   status: string
   createdAt: string
+}
+
+/** AI 会话（历史会话列表 / 会话切换用） */
+export interface QaSession {
+  id: string
+  title: string
+  subject: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 历史消息一屏 */
+export interface QaMessagePage {
+  items: QaMessage[]
+  total: number
+  /** 还有更早的消息时给出下一页游标；没有更早的则为 null */
+  nextBeforeId: string | null
+}
+
+/** 会话列表的分页信封 */
+export interface QaSessionPage {
+  items: QaSession[]
+  total: number
+  page: number
+  pageSize: number
+  pages: number
 }
 
 export interface QaUsage {
@@ -29,7 +59,9 @@ export interface QaUsage {
 interface BackendSession {
   id: number
   title: string | null
+  subject: string | null
   status: string
+  created_at: string
   updated_at: string
 }
 
@@ -43,6 +75,12 @@ interface BackendMessage {
 
 interface BackendSessionDetail extends BackendSession {
   messages: BackendMessage[]
+}
+
+interface BackendMessagePage {
+  items: BackendMessage[]
+  total: number
+  next_before_id: number | null
 }
 
 interface BackendUsage {
@@ -66,33 +104,115 @@ function toQaMessage(row: BackendMessage): QaMessage {
   }
 }
 
+function toQaSession(row: BackendSession): QaSession {
+  return {
+    id: String(row.id),
+    title: row.title?.trim() || '新会话',
+    subject: row.subject ?? '',
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
 /** 新建会话 */
-export async function createSession(title = 'AI 助教'): Promise<string> {
+export async function createSession(title = 'AI 助教'): Promise<QaSession> {
   const studentId = requireStudentId()
   const row = await post<BackendSession>('/qa/sessions', {
     body: { student_id: Number(studentId), title },
   })
-  return String(row.id)
+  return toQaSession(row)
+}
+
+/**
+ * 会话列表：`GET /qa/sessions?student_id=&page=&page_size=&status=`
+ * 分页信封，`updated_at` 倒序，只含保留期内活动过的会话。
+ */
+export async function fetchSessions(
+  params: { page?: number; pageSize?: number; status?: 'ACTIVE' | 'CLOSED' } = {},
+): Promise<QaSessionPage> {
+  const studentId = requireStudentId()
+  const page = await get<Page<BackendSession>>('/qa/sessions', {
+    query: {
+      student_id: studentId,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 20,
+      status: params.status,
+    },
+  })
+  return {
+    items: page.items.map(toQaSession),
+    total: page.total ?? 0,
+    page: page.page ?? 1,
+    pageSize: page.page_size ?? 20,
+    pages: page.pages ?? 1,
+  }
 }
 
 /** 拿最近一个还在用的会话；没有就新建（后端按保留期过滤，过期的会话不会返回） */
-export async function ensureSession(): Promise<string> {
-  const studentId = requireStudentId()
-  const page = await get<Page<BackendSession>>('/qa/sessions', {
-    query: { student_id: studentId, page_size: 20 },
-  })
-  const active = page.items.find((item) => item.status === 'ACTIVE')
-  if (active) return String(active.id)
+export async function ensureSession(): Promise<QaSession> {
+  const { items } = await fetchSessions({ pageSize: 20 })
+  const first = items[0]
+  if (first) return first
   return createSession()
 }
 
-/** 会话最近的消息（后端按时间正序返回） */
-export async function fetchMessages(sessionId: string, limit = 30): Promise<QaMessage[]> {
+/** 重命名 / 关闭（status=CLOSED）/ 重开（status=ACTIVE） */
+export async function updateSession(
+  sessionId: string,
+  changes: { title?: string; status?: 'ACTIVE' | 'CLOSED' },
+): Promise<QaSession> {
+  const studentId = requireStudentId()
+  const row = await patch<BackendSession>(`/qa/sessions/${sessionId}`, {
+    query: { student_id: studentId },
+    body: changes,
+  })
+  return toQaSession(row)
+}
+
+/** 删除会话：后端会连带删除消息与引用（物理删除） */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const studentId = requireStudentId()
+  await del<unknown>(`/qa/sessions/${sessionId}`, { query: { student_id: studentId } })
+}
+
+/** 会话详情：会话信息 + 最近 30 条消息（按时间正序） */
+export async function fetchSession(
+  sessionId: string,
+  messageLimit = 30,
+): Promise<{ session: QaSession; messages: QaMessage[] }> {
   const studentId = requireStudentId()
   const detail = await get<BackendSessionDetail>(`/qa/sessions/${sessionId}`, {
-    query: { student_id: studentId, message_limit: limit },
+    query: { student_id: studentId, message_limit: messageLimit },
   })
-  return (detail.messages ?? []).map(toQaMessage)
+  return {
+    session: toQaSession(detail),
+    messages: (detail.messages ?? []).map(toQaMessage),
+  }
+}
+
+/**
+ * 会话历史消息一屏。
+ * 不传 beforeId 时取最新一屏；翻更早的消息时把上一屏响应里的 `nextBeforeId` 传进来。
+ */
+export async function fetchMessagePage(
+  sessionId: string,
+  beforeId?: string | null,
+  limit = 30,
+): Promise<QaMessagePage> {
+  const studentId = requireStudentId()
+  const page = await get<BackendMessagePage>(`/qa/sessions/${sessionId}/messages`, {
+    query: {
+      student_id: studentId,
+      before_id: beforeId ?? undefined,
+      limit,
+    },
+  })
+  return {
+    items: page.items.map(toQaMessage),
+    total: page.total ?? 0,
+    nextBeforeId: page.next_before_id == null ? null : String(page.next_before_id),
+  }
 }
 
 /** token / 提问次数用量（当日 + 保留期内） */

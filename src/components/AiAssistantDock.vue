@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import { chatQuickQuestions } from '@/mock/data'
 import { useChatStore } from '@/stores/chat'
 import { getAssistantSpot, setAssistantSpot } from '@/utils/storage'
+import { formatDateTime } from '@/utils/format'
+import type { QaSession } from '@/api/qa'
 
 const route = useRoute()
 const chat = useChatStore()
@@ -151,11 +154,67 @@ function scrollToEnd(): void {
   })
 }
 
-watch(() => chat.messages.length, scrollToEnd)
+/** 会话列表筛选：后端支持 status=ACTIVE / CLOSED，空串表示全部 */
+const sessionTabs: { label: string; value: 'ACTIVE' | 'CLOSED' | '' }[] = [
+  { label: '进行中', value: 'ACTIVE' },
+  { label: '已结束', value: 'CLOSED' },
+  { label: '全部', value: '' },
+]
+
+/** 往上翻更早的消息：保持当前视口位置，不跳回底部 */
+async function loadEarlier(): Promise<void> {
+  const element = listRef.value
+  const anchor = element ? element.scrollHeight - element.scrollTop : 0
+  await chat.loadEarlier()
+  await nextTick()
+  if (element) element.scrollTop = Math.max(0, element.scrollHeight - anchor)
+}
+
+async function renameSession(session: QaSession): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('给这个会话起个名字', '重命名会话', {
+      inputValue: session.title,
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValidator: (input: string) => (input && input.trim() ? true : '名称不能为空'),
+    })
+    await chat.renameSession(session.id, value ?? '')
+  } catch {
+    /* 取消改名 */
+  }
+}
+
+async function removeSession(session: QaSession): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `删除会话「${session.title}」？该会话的消息会一并删除，不可恢复。`,
+      '删除会话',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await chat.removeSession(session.id)
+}
+
+/** 只在「末尾有新消息」时滚到底：往上翻历史时不能跳到底部 */
+watch(
+  () => {
+    const last = chat.messages[chat.messages.length - 1]
+    return `${last?.id ?? ''}:${last?.content.length ?? 0}`
+  },
+  () => scrollToEnd(),
+)
 watch(
   () => chat.sending,
   (value) => {
     if (value) scrollToEnd()
+  },
+)
+watch(
+  () => chat.collapsed,
+  (value) => {
+    if (!value) scrollToEnd()
   },
 )
 
@@ -189,11 +248,25 @@ onBeforeUnmount(() => {
       <header class="assistant__head">
         <div class="assistant__title">
           <span class="assistant__dot" aria-hidden="true" />
-          <span>AI 助教对话框</span>
+          <span class="assistant__name" :title="chat.sessionTitle">{{ chat.sessionTitle }}</span>
         </div>
         <div class="assistant__head-actions">
-          <button class="assistant__icon-btn" type="button" title="清空对话" @click="chat.clear()">
-            清空
+          <button
+            class="assistant__icon-btn"
+            :class="{ 'is-on': chat.historyOpen }"
+            type="button"
+            title="历史会话"
+            @click="chat.toggleHistory()"
+          >
+            会话
+          </button>
+          <button
+            class="assistant__icon-btn"
+            type="button"
+            title="新建会话"
+            @click="chat.newSession()"
+          >
+            新会话
           </button>
           <button
             class="assistant__icon-btn"
@@ -211,11 +284,72 @@ onBeforeUnmount(() => {
         {{ chat.contextLabel }}
       </p>
 
-      <div ref="listRef" class="assistant__list">
+      <!-- 历史会话：切换 / 重命名 / 关闭 / 删除 -->
+      <div v-if="chat.historyOpen" class="sessions">
+        <div class="sessions__tabs">
+          <button
+            v-for="tab in sessionTabs"
+            :key="tab.label"
+            class="sessions__tab"
+            :class="{ 'is-on': chat.sessionStatusFilter === tab.value }"
+            type="button"
+            @click="chat.setSessionFilter(tab.value)"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <ul class="sessions__list">
+          <li
+            v-for="session in chat.sessions"
+            :key="session.id"
+            class="session"
+            :class="{ 'is-on': session.id === chat.sessionId }"
+          >
+            <button class="session__main" type="button" @click="chat.selectSession(session.id)">
+              <span class="session__title">{{ session.title }}</span>
+              <span class="session__meta">
+                <span class="num">{{ formatDateTime(session.updatedAt) }}</span>
+                <span v-if="session.status === 'CLOSED'" class="session__flag">已结束</span>
+              </span>
+            </button>
+            <div class="session__ops">
+              <button type="button" title="重命名" @click="renameSession(session)">改名</button>
+              <button
+                type="button"
+                :title="session.status === 'CLOSED' ? '重开会话' : '关闭会话'"
+                @click="chat.toggleSessionStatus(session.id)"
+              >
+                {{ session.status === 'CLOSED' ? '重开' : '关闭' }}
+              </button>
+              <button type="button" title="删除会话" @click="removeSession(session)">删除</button>
+            </div>
+          </li>
+        </ul>
+
+        <p v-if="!chat.sessions.length" class="sessions__empty">
+          这个筛选下还没有会话，点右上角「新会话」开一个。
+        </p>
+        <p v-else-if="chat.sessionTotal > chat.sessions.length" class="sessions__more">
+          共 {{ chat.sessionTotal }} 个会话，当前显示最近 {{ chat.sessions.length }} 个
+        </p>
+      </div>
+
+      <div v-else ref="listRef" class="assistant__list">
         <template v-if="chat.loading">
           <div class="assistant__skeleton skeleton" />
           <div class="assistant__skeleton assistant__skeleton--short skeleton" />
         </template>
+
+        <button
+          v-if="chat.hasMore && !chat.loading"
+          class="load-earlier"
+          type="button"
+          :disabled="chat.loadingEarlier"
+          @click="loadEarlier"
+        >
+          {{ chat.loadingEarlier ? '正在加载…' : '查看更早的消息' }}
+        </button>
 
         <div
           v-for="message in chat.messages"
@@ -250,7 +384,7 @@ onBeforeUnmount(() => {
         </p>
       </div>
 
-      <div v-if="showQuick" class="assistant__quick">
+      <div v-if="showQuick && !chat.historyOpen" class="assistant__quick">
         <button
           v-for="question in chatQuickQuestions"
           :key="question"
@@ -262,7 +396,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <footer class="assistant__composer">
+      <footer v-if="!chat.historyOpen" class="assistant__composer">
         <textarea
           v-model="draft"
           class="assistant__input"
@@ -400,9 +534,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   color: var(--ink-1);
   font-size: 14px;
   font-weight: 700;
+}
+
+/* 标题位显示当前会话名，过长省略 */
+.assistant__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .assistant__dot {
@@ -416,6 +558,7 @@ onBeforeUnmount(() => {
 .assistant__head-actions {
   display: flex;
   gap: 2px;
+  flex: none;
 }
 
 .assistant__icon-btn {
@@ -434,6 +577,11 @@ onBeforeUnmount(() => {
 .assistant__icon-btn:hover {
   background: var(--surface-2);
   color: var(--ink-1);
+}
+
+.assistant__icon-btn.is-on {
+  background: var(--brand-050);
+  color: var(--brand-600);
 }
 
 .assistant__context {
@@ -464,6 +612,162 @@ onBeforeUnmount(() => {
 
 .assistant__skeleton {
   height: 54px;
+}
+
+/* —— 历史会话面板 —— */
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 12px;
+  overflow-y: auto;
+}
+
+.sessions__tabs {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.sessions__tab {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.sessions__tab:hover {
+  border-color: var(--brand-300);
+  color: var(--brand-600);
+}
+
+.sessions__tab.is-on {
+  border-color: var(--brand-500);
+  background: var(--brand-050);
+  color: var(--brand-600);
+}
+
+.sessions__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.session:hover {
+  border-color: var(--brand-300);
+}
+
+.session.is-on {
+  border-color: var(--brand-500);
+  background: var(--brand-050);
+}
+
+.session__main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session__title {
+  overflow: hidden;
+  color: var(--ink-1);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.session__flag {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  line-height: 15px;
+}
+
+.session__ops {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+
+.session__ops button {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.session__ops button:hover {
+  background: #fff;
+  color: var(--brand-600);
+}
+
+.sessions__empty,
+.sessions__more {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* —— 加载更早的消息 —— */
+.load-earlier {
+  align-self: center;
+  padding: 4px 12px;
+  border: 1px dashed var(--brand-300);
+  border-radius: var(--r-chip);
+  background: var(--brand-050);
+  color: var(--brand-600);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-earlier:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .assistant__skeleton--short {
