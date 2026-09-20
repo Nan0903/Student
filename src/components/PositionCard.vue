@@ -9,16 +9,19 @@ const props = withDefaults(
     variant?: 'compact' | 'select'
     pickable?: boolean
     picked?: boolean
-    /** 是否显示「初级 → 中级」这类等级区间；岗位体系里只保留方向标签 */
-    showLevel?: boolean
+    /**
+     * 是否显示难度药丸。
+     * 需求确认书 §2.3「成长中心 · 我的岗位」的卡片字段含难度，所以成长中心默认显示；
+     * 「岗位选择（与技能树合并）」的卡片字段是名称 / 方向标签 / 匹配度 / 已选人数，那里不显示。
+     */
+    showDifficulty?: boolean
   }>(),
-  { variant: 'compact', pickable: false, picked: false, showLevel: true },
+  { variant: 'compact', pickable: false, picked: false, showDifficulty: true },
 )
 
 const emit = defineEmits<{ open: [position: PositionView]; pick: [position: PositionView] }>()
 
 const tone = computed(() => difficultyTone[props.position.difficulty])
-const isCurrent = computed(() => props.position.selected)
 
 function onClick(): void {
   if (props.pickable) {
@@ -34,7 +37,7 @@ function onClick(): void {
     class="position-card"
     :class="[
       `position-card--${variant}`,
-      { 'is-picked': picked, 'is-current': isCurrent, 'is-pickable': pickable },
+      { 'is-picked': picked, 'is-pickable': pickable },
     ]"
     tabindex="0"
     role="button"
@@ -45,18 +48,10 @@ function onClick(): void {
     <div class="position-card__head">
       <div class="position-card__title">
         <h3 class="position-card__name">
-          {{ position.name }}
-          <span v-if="isCurrent" class="position-card__current">当前</span>
+          <span class="position-card__name-text">{{ position.name }}</span>
+          <span class="position-card__direction">{{ position.direction }}</span>
           <span v-if="pickable && picked" class="position-card__picked">已选择</span>
         </h3>
-        <p class="position-card__level">
-          <template v-if="showLevel">
-            {{ position.levelFrom }}
-            <span class="position-card__arrow">→</span>
-            {{ position.levelTo }}
-          </template>
-          <span class="position-card__direction">{{ position.direction }}</span>
-        </p>
       </div>
       <div class="position-card__match">
         <span class="position-card__match-value num">{{ position.percent }}%</span>
@@ -81,7 +76,13 @@ function onClick(): void {
         </span>
         <span class="stat__label">项目已完成</span>
       </span>
-      <span class="pill" :class="`pill--${tone}`">{{ position.difficulty }}</span>
+    </div>
+
+    <!-- 难度药丸固定独占一行、右对齐：否则会随数字宽度在同一行/下一行之间跳 -->
+    <div class="position-card__badges">
+      <span v-if="showDifficulty" class="pill" :class="`pill--${tone}`">
+        {{ position.difficulty }}
+      </span>
     </div>
 
     <div class="position-card__meter" aria-hidden="true">
@@ -115,11 +116,6 @@ function onClick(): void {
   box-shadow: var(--sh-2);
 }
 
-.position-card.is-current {
-  border-color: var(--brand-500);
-  background: linear-gradient(180deg, var(--brand-050), #fff 58%);
-}
-
 .position-card.is-picked {
   border-color: var(--brand-500);
   box-shadow: 0 0 0 2px var(--brand-100), var(--sh-2);
@@ -142,19 +138,14 @@ function onClick(): void {
 .position-card__name {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 16px;
   font-weight: 700;
 }
 
-.position-card__current {
-  padding: 0 7px;
-  border-radius: var(--r-chip);
-  background: var(--brand-500);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
+.position-card__name-text {
+  min-width: 0;
 }
 
 .position-card__picked {
@@ -168,24 +159,13 @@ function onClick(): void {
   line-height: 18px;
 }
 
-.position-card__level {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink-2);
-  font-size: 12px;
-}
-
-.position-card__arrow {
-  color: var(--ink-3);
-}
-
 .position-card__direction {
-  margin-left: 4px;
   padding: 0 8px;
   border-radius: var(--r-chip);
   background: var(--surface-2);
   color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
   line-height: 19px;
 }
 
@@ -244,8 +224,10 @@ function onClick(): void {
   color: var(--ink-3);
 }
 
-.position-card__stats .pill {
-  margin-left: auto;
+/* 难度药丸单独一行，靠右：位置不随数字宽度变化 */
+.position-card__badges {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .position-card__meter {

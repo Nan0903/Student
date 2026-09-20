@@ -8,9 +8,13 @@ import { useChatStore } from '@/stores/chat'
 import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
-import { fetchJobProjectProgress, type JobProjectProgress } from '@/api/position'
+import {
+  fetchProjectProgress,
+  type ProjectProgress,
+  type ProjectProgressScope,
+} from '@/api/position'
 import { tierLabel, tierOrder } from '@/utils/format'
-import type { Position, PositionView, SkillNode } from '@/types'
+import type { Position, PositionView, Project, SkillNode } from '@/types'
 
 const router = useRouter()
 const positionStore = usePositionStore()
@@ -20,13 +24,37 @@ const chat = useChatStore()
 
 const drawerVisible = ref(false)
 const drawerPosition = ref<Position | null>(null)
-/** 后端给的「当前岗位下三档项目进度」 */
-const jobProgress = ref<JobProjectProgress | null>(null)
 
 const LEVEL_BY_TIER: Record<'basic' | 'advanced' | 'extended', string> = {
   basic: 'BASIC',
   advanced: 'ADVANCED',
   extended: 'EXPANDED',
+}
+
+/** 「实训进度概览」的分母口径（三选一）：全部已发布 / 自主选择 / 下发任务 */
+const progressScopes: { value: ProjectProgressScope; label: string }[] = [
+  { value: 'ALL', label: '全部项目' },
+  { value: 'SELF', label: '自主选择' },
+  { value: 'TEACHER', label: '下发任务' },
+]
+const progressScope = ref<ProjectProgressScope>('ALL')
+/** 三种口径的结果各缓存一份，来回切换不再重复请求 */
+const progressByScope = ref<Partial<Record<ProjectProgressScope, ProjectProgress>>>({})
+const currentProgress = computed(() => progressByScope.value[progressScope.value] ?? null)
+
+async function loadProgress(scope: ProjectProgressScope): Promise<void> {
+  if (progressByScope.value[scope]) return
+  try {
+    const progress = await fetchProjectProgress(scope)
+    progressByScope.value = { ...progressByScope.value, [scope]: progress }
+  } catch {
+    /* 拿不到就用项目列表现算，页面不空 */
+  }
+}
+
+function switchScope(scope: ProjectProgressScope): void {
+  progressScope.value = scope
+  void loadProgress(scope)
 }
 
 const loading = computed(() => positionStore.loading || skillStore.loading || projectStore.loading)
@@ -60,18 +88,22 @@ const drawerProgress = computed(() => {
 })
 
 /**
- * 实训进度概览：取后端「当前岗位下三档项目的进度」。
+ * 实训进度概览：取后端当前口径（全部项目 / 自主选择 / 下发任务）的三档进度。
  *
- * 后端没返回时（比如还没选岗位）回退为按项目列表现算，保证页面不空。
+ * 三种口径都与岗位无关：全部口径就是项目库里能做的项目数，所以学生做完别的岗位的项目也会算进来。
+ * 后端没返回时（请求失败 / 还在加载）按项目列表用同样的口径现算，保证页面不空。
  */
+function inScope(project: Project): boolean {
+  if (progressScope.value === 'SELF') return project.picked
+  if (progressScope.value === 'TEACHER') return project.isRequired
+  return true
+}
+
 const tierProgress = computed(() =>
   tierOrder.map((tier) => {
-    // 主岗位下没有任何已发布项目时（后端 aggregates 为 0），回退为按全部已发布项目统计，
-    // 否则学生刚做完别的岗位的项目时这里会一直显示 0/0
-    const useBackend = (jobProgress.value?.total ?? 0) > 0
-    const fromBackend = useBackend
-      ? jobProgress.value?.levels.find((level) => LEVEL_BY_TIER[tier] === level.levelType)
-      : undefined
+    const fromBackend = currentProgress.value?.levels.find(
+      (level) => LEVEL_BY_TIER[tier] === level.levelType,
+    )
     if (fromBackend) {
       return {
         tier,
@@ -80,7 +112,7 @@ const tierProgress = computed(() =>
         total: fromBackend.total,
       }
     }
-    const list = projectStore.projects.filter((project) => project.tier === tier)
+    const list = projectStore.projects.filter((project) => project.tier === tier && inScope(project))
     return {
       tier,
       name: tierLabel[tier],
@@ -103,18 +135,14 @@ function goSkill(node: SkillNode): void {
   drawerVisible.value = false
   void router.push({
     path: '/map',
-    query: { position: drawerPosition.value?.id ?? '', skill: node.id },
+    query: { skill: node.id },
   })
 }
 
 onMounted(async () => {
   chat.contextLabel = '成长中心 · 我的推荐岗位与实训进度'
   await Promise.all([positionStore.load(), skillStore.load(), projectStore.load()])
-  try {
-    jobProgress.value = await fetchJobProjectProgress()
-  } catch {
-    /* 拿不到就用项目列表现算，页面不空 */
-  }
+  await loadProgress(progressScope.value)
 })
 </script>
 
@@ -167,6 +195,20 @@ onMounted(async () => {
         <div class="panel-head__title">
           <span class="panel-title-mark" />
           实训进度概览
+        </div>
+        <div class="panel-head__extra">
+          <div class="scope-switch">
+            <button
+              v-for="item in progressScopes"
+              :key="item.value"
+              class="scope-switch__item"
+              :class="{ 'is-on': progressScope === item.value }"
+              type="button"
+              @click="switchScope(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
         </div>
       </header>
       <div class="panel-body">
@@ -302,6 +344,37 @@ onMounted(async () => {
 }
 
 /* —— 进度概览 —— */
+.scope-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+}
+
+.scope-switch__item {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.scope-switch__item:hover {
+  color: var(--brand-600);
+}
+
+.scope-switch__item.is-on {
+  background: var(--surface);
+  color: var(--brand-600);
+  box-shadow: var(--sh-1);
+}
+
 .tier-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

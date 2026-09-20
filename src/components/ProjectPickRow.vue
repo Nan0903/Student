@@ -5,10 +5,10 @@ import { useProjectStore } from '@/stores/project'
 import type { Project } from '@/types'
 
 /**
- * 「项目 + 加入我的实训」一行。
+ * 「项目 + 加入关卡地图」一行。
  *
  * 技能体系（技能点详情）与岗位体系（岗位详情）共用：点行进入项目详情，
- * 右侧按钮负责把自己挑的项目加进 / 移出「我的实训」—— 未加入显示「+」，已加入显示「已加入」。
+ * 右侧按钮负责把自己挑的项目加进 / 移出关卡地图（后端「我的实训」清单）—— 未加入显示「+」，已加入显示「已加入」。
  * 老师点名必修的项目带「必修」标记，它本来就会出现在关卡地图上，学生还可以自己再挑一次。
  */
 const props = defineProps<{ project: Project }>()
@@ -27,7 +27,7 @@ const percent = computed(() => {
 })
 
 /**
- * 加进 / 移出「我的实训」。
+ * 加进 / 移出关卡地图（后端 my-projects 清单）。
  *
  * 两边都是幂等的：加入直接生效；移出前先确认，必修项目会额外说明"移出后仍在地图上"。
  * 后端拒绝时（项目没发布等）把原因原样提示。
@@ -39,9 +39,9 @@ async function toggle(): Promise<void> {
     try {
       await ElMessageBox.confirm(
         project.isRequired
-          ? `「${project.name}」是老师点名的必修项目，移出后仍会留在你的关卡地图上。确认移出？`
-          : `把「${project.name}」移出「我的实训」？已经开始的闯关记录不会丢，之后还能重新加入。`,
-        '移出我的实训',
+          ? `「${project.name}」是老师点名的必修项目，移除后仍会留在你的关卡地图上。确认移除？`
+          : `把「${project.name}」从关卡地图移除？已经开始的闯关记录不会丢，之后还能重新加入。`,
+        '移除关卡地图',
         { confirmButtonText: '移出', cancelButtonText: '取消', type: 'warning' },
       )
     } catch {
@@ -55,12 +55,12 @@ async function toggle(): Promise<void> {
       await projectStore.unpickProject(project.id)
       ElMessage.success(
         project.isRequired
-          ? `已把「${project.name}」移出我的实训；它是必修项目，仍留在关卡地图上`
-          : `已把「${project.name}」移出我的实训`,
+          ? `已把「${project.name}」移除关卡地图；它是必修项目，仍会留在地图上`
+          : `已把「${project.name}」移除关卡地图`,
       )
     } else {
       await projectStore.pickProject(project.id)
-      ElMessage.success(`已把「${project.name}」加入我的实训`)
+      ElMessage.success(`已把「${project.name}」加入关卡地图`)
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '操作失败，请稍后重试')
@@ -87,8 +87,8 @@ async function toggle(): Promise<void> {
       :class="{ 'is-on': project.picked }"
       type="button"
       :disabled="picking"
-      :title="project.picked ? '已加入我的实训，点击移出' : '加入我的实训'"
-      :aria-label="project.picked ? `移出${project.name}` : `加入${project.name}`"
+      :title="project.picked ? '已加入关卡地图，点击移除' : '加入关卡地图'"
+      :aria-label="project.picked ? `移除${project.name}` : `加入${project.name}`"
       @click="toggle"
     >
       {{ project.picked ? '已加入' : '+' }}

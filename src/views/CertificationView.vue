@@ -149,7 +149,12 @@ onMounted(async () => {
       </header>
 
       <div class="panel-body">
-        <ul v-if="visibleItems.length" class="certs">
+        <!-- 取数期间先占位：少了这层判断就会在数据到达前闪一下「还没有已获得的证书」 -->
+        <div v-if="loading" class="certs-skeleton">
+          <div v-for="index in 2" :key="index" class="cert-skeleton skeleton" />
+        </div>
+
+        <ul v-else-if="visibleItems.length" class="certs">
           <li v-for="item in visibleItems" :key="item.id" class="cert">
             <div class="cert__main">
               <p class="cert__name">{{ item.positionName }}</p>
@@ -435,6 +440,17 @@ onMounted(async () => {
 }
 
 /* —— 证书列表项 —— */
+.certs-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cert-skeleton {
+  height: 96px;
+  border-radius: var(--r-md);
+}
+
 .certs {
   display: flex;
   flex-direction: column;

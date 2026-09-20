@@ -36,6 +36,7 @@ function toChatMessage(row: QaMessage): ChatMessage {
     content: row.content,
     createdAt: formatDateTime(row.createdAt),
     failed: row.status === 'FAILED',
+    model: row.modelName ?? undefined,
   }
 }
 
@@ -271,6 +272,8 @@ export const useChatStore = defineStore('chat', () => {
       try {
         const answer = await askStream(sessionId.value, text, {
           model: model.value,
+          // 首帧 meta 带回真实模型名：选的是 Kimi 就用 kimi 那套，这里照实记下来
+          onModel: (info) => replace(pendingId, { model: info.model }),
           onDelta: (delta) => {
             const current = messages.value.find((item) => item.id === pendingId)
             if (current) replace(pendingId, { content: current.content + delta })
@@ -285,7 +288,7 @@ export const useChatStore = defineStore('chat', () => {
         if (!isBusinessError) {
           try {
             const answer = await askOnce(sessionId.value, text, model.value)
-            replace(pendingId, { content: answer })
+            replace(pendingId, { content: answer.content, model: answer.model })
             await refreshUsage()
             return
           } catch (fallbackError) {

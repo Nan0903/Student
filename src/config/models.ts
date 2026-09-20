@@ -1,9 +1,10 @@
 /**
  * AI 助教可选的对话模型清单。
  *
- * 现状：后端 `ai.llm` 只有一套 LLM 配置（DeepSeek 的 base_url / model / api_key），
- * 因此三个选项实际都由 DeepSeek 回答 —— 前端会把所选模型随提问一起提交（`model` 字段），
- * 后端按模型分流后即生效，届时只需要改这里的 id 与后端配置的对应关系。
+ * 这里的 `id` 必须与后端 `system_config.ai.llm.models.<id>` 的键一致：
+ * 提问时把 id 放进请求体的 `model`，后端就按那家的 base_url / model / api_key 去调用
+ * （不传 `model` 用默认模型，即 `ai.llm` 的平铺字段那套）。
+ * 某家还没配 api_key 时，回答会明确提示去 `ai.llm.models.<id>` 里填，不会悄悄回落到默认模型。
  */
 
 export interface AssistantModel {

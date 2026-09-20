@@ -21,6 +21,8 @@ export interface QaMessage {
   content: string
   status: string
   createdAt: string
+  /** 实际出这条回答的模型名（历史消息也能看到当时用的是哪家） */
+  modelName?: string
 }
 
 /** AI 会话（历史会话列表 / 会话切换用） */
@@ -71,6 +73,8 @@ interface BackendMessage {
   content: string
   status: string
   created_at: string
+  /** 实际出这条回答的模型名（后端按选项分流后记录的） */
+  model_name?: string | null
 }
 
 interface BackendSessionDetail extends BackendSession {
@@ -91,7 +95,15 @@ interface BackendUsage {
 
 interface SseFrame {
   event: string
-  data: { text?: string; msg?: string; code?: string } | null
+  data: {
+    text?: string
+    msg?: string
+    code?: string
+    /** 首帧 meta：这条回答实际用的模型（options id / 展示名 / 上游模型名） */
+    model?: string
+    model_key?: string
+    model_label?: string
+  } | null
 }
 
 function toQaMessage(row: BackendMessage): QaMessage {
@@ -101,6 +113,7 @@ function toQaMessage(row: BackendMessage): QaMessage {
     content: row.content,
     status: row.status,
     createdAt: row.created_at,
+    modelName: row.model_name ?? undefined,
   }
 }
 
@@ -257,11 +270,13 @@ function parseFrame(frame: string): SseFrame {
 export interface AskOptions {
   /**
    * 学生选择的模型标识（见 `config/models.ts`）。
-   * 后端目前只有一套 LLM 配置，收到该字段也不会分流，先按协议传着。
+   * 后端按它取 `ai.llm.models.<id>` 里那一家的配置去调用；留空用默认模型。
    */
   model?: string
   /** 流式增量回调：每收到一段就交给调用方拼接 */
   onDelta: (text: string) => void
+  /** 首帧 meta 带回的真实模型信息（选项 id / 展示名 / 上游模型名） */
+  onModel?: (info: { key: string; label: string; model: string }) => void
 }
 
 /** 流式提问：边收边回调，返回完整回答 */
@@ -312,7 +327,16 @@ export async function askStream(
       const frame = buffer.slice(0, index)
       buffer = buffer.slice(index + 2)
       const { event, data } = parseFrame(frame)
-      if (event === 'delta') {
+      if (event === 'meta') {
+        const model = data?.model ?? ''
+        if (model) {
+          options.onModel?.({
+            key: data?.model_key ?? options.model ?? '',
+            label: data?.model_label ?? '',
+            model,
+          })
+        }
+      } else if (event === 'delta') {
         const text = data?.text ?? ''
         if (text) {
           content += text
@@ -346,10 +370,14 @@ export async function askStream(
 }
 
 /** 非流式提问（流式不可用时的兜底），`model` 语义同 `askStream` */
-export async function askOnce(sessionId: string, question: string, model?: string): Promise<string> {
+export async function askOnce(
+  sessionId: string,
+  question: string,
+  model?: string,
+): Promise<{ content: string; model?: string }> {
   const studentId = requireStudentId()
   const result = await post<{ message: BackendMessage }>(`/qa/sessions/${sessionId}/ask`, {
     body: { student_id: Number(studentId), question, stream: false, model },
   })
-  return result.message.content
+  return { content: result.message.content, model: result.message.model_name ?? undefined }
 }

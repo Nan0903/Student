@@ -51,13 +51,6 @@ const DIFFICULTY_BY_LEVEL: Record<string, PositionDifficulty> = {
   EXPANDED: '较难',
 }
 
-/** 等级区间文案：按后端 recommended_level 映射 */
-const LEVEL_RANGE: Record<string, [string, string]> = {
-  BASIC: ['初级', '中级'],
-  ADVANCED: ['中级', '高级'],
-  EXPANDED: ['高级', '资深'],
-}
-
 /** 岗位列表（含后端算好的匹配度与技能点画像），limit 取上限 50 拿到全部岗位 */
 export async function fetchPositions(): Promise<Position[]> {
   const studentId = requireStudentId()
@@ -71,16 +64,12 @@ export async function fetchPositions(): Promise<Position[]> {
   const primaryJobId = myJobs.find((item) => item.is_primary)?.job_id ?? null
 
   return recommendations.map((job) => {
-    const [levelFrom = '初级', levelTo = '中级'] =
-      LEVEL_RANGE[job.recommended_level ?? 'BASIC'] ?? []
     return {
       id: String(job.job_id),
       name: job.job_name,
       direction: job.direction_tag ?? '其他方向',
       difficulty: DIFFICULTY_BY_LEVEL[job.recommended_level ?? 'BASIC'] ?? '中等',
       description: job.description ?? job.scene ?? '',
-      levelFrom,
-      levelTo,
       heat: job.heat,
       // 后端没有「已选人数」聚合接口，先按 0 展示
       selectedCount: 0,
@@ -121,19 +110,24 @@ export interface LevelProjectProgress {
   percent: number
 }
 
-export interface JobProjectProgress {
-  jobId: number | null
-  jobName: string | null
-  isPrimary: boolean
+/**
+ * 「实训进度概览」的分母口径：
+ * - `ALL` 全部已发布项目（学生能看到并闯关任何一个）
+ * - `SELF` 学生自己加进「我的实训」的项目
+ * - `TEACHER` 老师发任务点名必修的项目
+ */
+export type ProjectProgressScope = 'ALL' | 'SELF' | 'TEACHER'
+
+export interface ProjectProgress {
+  scope: ProjectProgressScope
   total: number
   completed: number
   levels: LevelProjectProgress[]
 }
 
-interface BackendJobProjectProgress {
-  job_id: number | null
-  job_name: string | null
-  is_primary: boolean
+interface BackendProjectProgress {
+  student_id: number
+  scope: string
   total: number
   completed: number
   levels: {
@@ -145,16 +139,21 @@ interface BackendJobProjectProgress {
   }[]
 }
 
-/** 当前岗位下三档实训项目的进度（成长中心「实训进度概览」用） */
-export async function fetchJobProjectProgress(): Promise<JobProjectProgress> {
+/**
+ * 三档实训项目进度（成长中心「实训进度概览」用）。
+ *
+ * 分母由 `scope` 决定（全部已发布项目 / 我自主选择的 / 老师下发的），三种口径都只算已发布
+ * 项目、都跟岗位无关；岗位维度的项目数看 Position 上的 projectTotal / projectDone。
+ */
+export async function fetchProjectProgress(
+  scope: ProjectProgressScope = 'ALL',
+): Promise<ProjectProgress> {
   const studentId = requireStudentId()
-  const data = await get<BackendJobProjectProgress>(
-    `/students/${studentId}/job-project-progress`,
-  )
+  const data = await get<BackendProjectProgress>(`/students/${studentId}/project-progress`, {
+    query: { scope },
+  })
   return {
-    jobId: data.job_id,
-    jobName: data.job_name,
-    isPrimary: data.is_primary,
+    scope: (data.scope as ProjectProgressScope) ?? scope,
     total: data.total,
     completed: data.completed,
     levels: (data.levels ?? []).map((level) => ({

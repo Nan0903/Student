@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import EmptyState from '@/components/EmptyState.vue'
 import ProjectCard from '@/components/ProjectCard.vue'
 import { useChatStore } from '@/stores/chat'
@@ -18,8 +18,16 @@ const skillStore = useSkillStore()
 const chat = useChatStore()
 const enums = useEnumStore()
 
-const ALL = 'all'
-const selectedPosition = ref<string>(ALL)
+/** 项目来源筛选：全部岗位（地图上全部项目）/ 自主选择（自己点「+」加的）/ 下发任务（老师点名必修） */
+type MapSource = 'all' | 'self' | 'teacher'
+
+const sourceOptions: { value: MapSource; label: string }[] = [
+  { value: 'all', label: '全部岗位' },
+  { value: 'self', label: '自主选择' },
+  { value: 'teacher', label: '下发任务' },
+]
+
+const selectedSource = ref<MapSource>('all')
 const highlightProjectId = ref('')
 const skillFilter = ref('')
 
@@ -43,22 +51,12 @@ const mapProjects = computed(() =>
   projectStore.projects.filter((project) => project.picked || project.isRequired),
 )
 
-/**
- * 岗位筛选的候选：只列已加入项目涉及的岗位（岗位名跟着项目一起从列表接口来），
- * 所以学生加入哪个岗位的项目，地图上才出现哪个岗位；只有一个岗位时也照常展示。
- */
-const mapPositions = computed(() => {
-  const seen = new Map<string, string>()
-  for (const project of mapProjects.value) {
-    if (!project.positionId || seen.has(project.positionId)) continue
-    seen.set(project.positionId, project.positionName ?? '未关联岗位')
-  }
-  return [...seen].map(([id, name]) => ({ id, name }))
-})
-
 const filteredProjects = computed(() => {
-  if (selectedPosition.value === ALL) return mapProjects.value
-  return mapProjects.value.filter((project) => project.positionId === selectedPosition.value)
+  if (selectedSource.value === 'self') return mapProjects.value.filter((project) => project.picked)
+  if (selectedSource.value === 'teacher') {
+    return mapProjects.value.filter((project) => project.isRequired)
+  }
+  return mapProjects.value
 })
 
 const skillProjectIds = computed(() => {
@@ -120,34 +118,62 @@ function openProject(project: Project): void {
 
 /** 清掉岗位与技能筛选，回到「全部已加入的项目」 */
 function clearFilters(): void {
-  selectedPosition.value = ALL
+  selectedSource.value = 'all'
   skillFilter.value = ''
 }
 
-/** 岗位筛选与技能参数同步到地址栏，便于分享与回退 */
+/**
+ * 把自己加进「我的实训」的项目移出。
+ *
+ * 老师点名必修的项目移出后仍会留在地图上（必修是任务实时算的），所以文案要说清楚。
+ */
+async function removeProject(project: Project): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      project.isRequired
+        ? `「${project.name}」是老师点名的必修项目，移除后仍会留在你的关卡地图上。确认移除？`
+        : `把「${project.name}」从关卡地图移除？已经开始的闯关记录不会丢，之后还能重新加入。`,
+      '移除关卡地图',
+      { confirmButtonText: '移出', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await projectStore.unpickProject(project.id)
+    ElMessage.success(
+      project.isRequired
+        ? `已把「${project.name}」移除关卡地图；它是必修项目，仍会留在地图上`
+        : `已把「${project.name}」移除关卡地图`,
+    )
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败，请稍后重试')
+  }
+}
+
+/** 来源筛选与技能参数同步到地址栏，便于分享与回退 */
 function syncQuery(): void {
   const query: Record<string, string> = {}
-  if (selectedPosition.value !== ALL) query.position = selectedPosition.value
+  if (selectedSource.value !== 'all') query.source = selectedSource.value
   if (skillFilter.value) query.skill = skillFilter.value
   if (highlightProjectId.value) query.project = highlightProjectId.value
   void router.replace({ path: '/map', query })
 }
 
-watch([selectedPosition, skillFilter], () => syncQuery())
+watch([selectedSource, skillFilter], () => syncQuery())
 
 onMounted(async () => {
   chat.contextLabel = '关卡地图 · 查看可挑战的实训项目'
   await Promise.all([projectStore.load(), skillStore.load()])
 
-  const positionQuery = typeof route.query.position === 'string' ? route.query.position : ''
+  const sourceQuery = typeof route.query.source === 'string' ? route.query.source : ''
   const skillQuery = typeof route.query.skill === 'string' ? route.query.skill : ''
   const projectQuery = typeof route.query.project === 'string' ? route.query.project : ''
 
-  // 岗位筛选只在「已加入项目涉及的岗位」里选，历史地址栏里的岗位已失效就回落到全部
-  selectedPosition.value =
-    positionQuery && mapPositions.value.some((item) => item.id === positionQuery)
-      ? positionQuery
-      : ALL
+  // 地址栏里的来源筛选只认这三个值，认不出来就回落到「全部岗位」
+  selectedSource.value = sourceOptions.some((item) => item.value === sourceQuery)
+    ? (sourceQuery as MapSource)
+    : 'all'
   skillFilter.value = skillQuery
   highlightProjectId.value = projectQuery
 })
@@ -169,27 +195,19 @@ onMounted(async () => {
       </ul>
     </div>
 
-    <!-- 岗位筛选：只列已加入项目涉及的岗位 -->
-    <div v-if="mapPositions.length" class="filter panel">
-      <span class="filter__label">岗位筛选</span>
+    <!-- 项目筛选：全部岗位 / 自主选择 / 下发任务（技能筛选是技能树点过来的临时过滤） -->
+    <div v-if="mapProjects.length" class="filter panel">
+      <span class="filter__label">项目筛选</span>
       <div class="filter__tags">
         <button
+          v-for="item in sourceOptions"
+          :key="item.value"
           class="filter-tag"
-          :class="{ 'is-on': selectedPosition === ALL }"
+          :class="{ 'is-on': selectedSource === item.value }"
           type="button"
-          @click="selectedPosition = ALL"
+          @click="selectedSource = item.value"
         >
-          全部岗位
-        </button>
-        <button
-          v-for="position in mapPositions"
-          :key="position.id"
-          class="filter-tag"
-          :class="{ 'is-on': selectedPosition === position.id }"
-          type="button"
-          @click="selectedPosition = position.id"
-        >
-          {{ position.name }}
+          {{ item.label }}
         </button>
       </div>
       <button v-if="skillFilter" class="skill-chip" type="button" @click="skillFilter = ''">
@@ -228,19 +246,21 @@ onMounted(async () => {
               :project="project"
               :skills="skillTags(project)"
               :position-name="project.positionName"
+              :removable="project.picked"
               @open="openProject"
+              @remove="removeProject"
             />
           </div>
         </div>
       </section>
     </template>
 
-    <!-- 一条都没有：入口在技能树（自己挑）或教师端任务（必修） -->
+    <!-- 一条都没有：入口在「技能选项」（自己挑）或教师端任务（必修） -->
     <div v-else-if="!mapProjects.length" class="panel">
       <EmptyState
         title="还没有加入任何项目"
-        description="去技能树（技能体系或岗位体系）点开一个技能点 / 岗位，在项目右边点「+」加入；老师布置的必修项目也会自动出现在这里。"
-        action-text="去技能树挑项目"
+        description="去「技能选项」（技能体系或岗位体系）点开一个技能点 / 岗位，在项目右边点「+」加入；老师布置的必修项目也会自动出现在这里。"
+        action-text="去技能选项挑项目"
         @action="router.push('/skill-tree')"
       />
     </div>
@@ -248,7 +268,7 @@ onMounted(async () => {
     <div v-else class="panel">
       <EmptyState
         title="当前筛选下没有项目"
-        description="换个岗位看看，或者清掉技能筛选，显示全部已加入的项目。"
+        description="换个筛选看看，或者清掉技能筛选，显示全部已加入的项目。"
         action-text="查看全部已加入项目"
         @action="clearFilters"
       />
@@ -439,7 +459,7 @@ onMounted(async () => {
 
 .tier-block__row {
   display: grid;
-  /* 固定一行三个，卡片尺寸不随内容变化 */
+  /* 固定一行三个；同一行等高，卡片高度随「关联技能点」的数量长 */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   padding: 4px 0;

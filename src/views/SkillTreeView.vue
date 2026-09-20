@@ -349,7 +349,7 @@ function goPractice(): void {
   if (!node) return
   void router.push({
     path: '/map',
-    query: { skill: node.id, position: '', project: target?.id ?? '' },
+    query: { skill: node.id, project: target?.id ?? '' },
   })
 }
 
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
           v-for="job in jobs"
           :key="job.id"
           :position="job"
-          :show-level="false"
+          :show-difficulty="false"
           @open="openJob"
         />
       </div>

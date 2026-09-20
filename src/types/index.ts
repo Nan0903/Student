@@ -49,9 +49,6 @@ export interface Position {
   direction: string
   difficulty: PositionDifficulty
   description: string
-  /** 等级区间，如 初级 → 中级 */
-  levelFrom: string
-  levelTo: string
   /** 热度 */
   heat: number
   /** 已选人数 / 通过人数 */
@@ -437,6 +434,8 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  /** 实际出这条回答的模型名（后端按题目选项分流后记录的） */
+  model?: string
   /** 知识库来源标注 */
   sources?: ChatSource[]
   createdAt: string

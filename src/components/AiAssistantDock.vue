@@ -360,6 +360,13 @@ onBeforeUnmount(() => {
           <span v-if="message.role === 'assistant'" class="bubble__avatar" aria-hidden="true">AI</span>
           <div class="bubble__body">
             <p class="bubble__text">{{ message.content }}</p>
+            <!-- 这条回答实际用的模型（选 kimi / mimo 时后端真的换了模型，这里照实显示） -->
+            <p
+              v-if="message.role === 'assistant' && message.model && !message.failed"
+              class="bubble__model"
+            >
+              {{ message.model }}
+            </p>
             <ul v-if="message.sources?.length" class="bubble__sources">
               <li v-for="source in message.sources" :key="source.title" class="source">
                 <span class="source__tag">来源</span>
@@ -397,7 +404,7 @@ onBeforeUnmount(() => {
       </div>
 
       <footer v-if="!chat.historyOpen" class="assistant__composer">
-        <!-- 模型选择：后端暂未按模型分流，选项见 config/models.ts -->
+        <!-- 模型选择：后端按 ai.llm.models.<id> 取对应那家的配置去调用，选项见 config/models.ts -->
         <div class="assistant__model">
           <span class="assistant__model-label">模型</span>
           <el-select
@@ -844,6 +851,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+/* 回答下方的小字：实际调用的是哪个模型 */
+.bubble__model {
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .source {
