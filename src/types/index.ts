@@ -206,8 +206,16 @@ export interface Project {
   name: string
   tier: ProjectTier
   positionId: string
+  /** 所属岗位名（关卡地图的岗位筛选直接用项目数据，不再依赖岗位推荐接口） */
+  positionName?: string
   /** 本项目挂靠的技能点（多对多：一个项目可覆盖多个技能点） */
   skillIds: string[]
+  /** 是否在学生自己的「我的实训」清单里（技能树点「+」加进来的） */
+  picked: boolean
+  /** 是否必修：老师发任务点名要求完成（与「自己挑的」可同时成立） */
+  isRequired: boolean
+  /** 必修任务里最早的截止时间，没有截止时间时为空 */
+  requiredDeadlineAt?: string
   status: ProjectStatus
   /** 关卡总数 */
   levelTotal: number

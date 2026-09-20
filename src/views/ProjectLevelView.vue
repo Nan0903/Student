@@ -7,7 +7,6 @@ import EmptyState from '@/components/EmptyState.vue'
 import LevelStepper from '@/components/LevelStepper.vue'
 import { useChatStore } from '@/stores/chat'
 import { useEnumStore } from '@/stores/enums'
-import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { formatFileSize, tierLabel } from '@/utils/format'
 import type { AiReview, ProjectFileKind } from '@/types'
@@ -15,7 +14,6 @@ import type { AiReview, ProjectFileKind } from '@/types'
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
-const positionStore = usePositionStore()
 const chat = useChatStore()
 const enums = useEnumStore()
 
@@ -42,9 +40,8 @@ const reviewing = ref(false)
 const review = ref<AiReview | null>(null)
 const reviewModuleName = ref('')
 
-const position = computed(() =>
-  positionStore.positions.find((item) => item.id === project.value?.positionId),
-)
+/** 所属岗位名跟着项目一起从列表接口来，不用再单独拉一次岗位推荐 */
+const positionName = computed(() => project.value?.positionName ?? '')
 
 const activeState = computed(
   () => states.value.find((state) => state.module.id === activeModuleId.value) ?? null,
@@ -354,7 +351,7 @@ watch(
 
 onMounted(async () => {
   chat.contextLabel = '关卡详情 · 逐关提交实训成果'
-  await Promise.all([projectStore.load(), positionStore.load()])
+  await projectStore.load()
   // 列表接口不带关卡组成，进详情页时补齐全量数据（关卡 + 项目资料）
   const current = (await projectStore.loadProject(projectId.value)) ?? project.value
   if (current) {
@@ -391,7 +388,7 @@ onUnmounted(() => {
         <p class="topbar__meta">
           {{ tierLabel[project.tier] }}
           <span class="topbar__sep">·</span>
-          {{ position?.name ?? '未关联岗位' }}
+          {{ positionName || '未关联岗位' }}
         </p>
       </div>
       <div class="topbar__score">

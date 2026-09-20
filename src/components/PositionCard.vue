@@ -9,8 +9,10 @@ const props = withDefaults(
     variant?: 'compact' | 'select'
     pickable?: boolean
     picked?: boolean
+    /** 是否显示「初级 → 中级」这类等级区间；岗位体系里只保留方向标签 */
+    showLevel?: boolean
   }>(),
-  { variant: 'compact', pickable: false, picked: false },
+  { variant: 'compact', pickable: false, picked: false, showLevel: true },
 )
 
 const emit = defineEmits<{ open: [position: PositionView]; pick: [position: PositionView] }>()
@@ -48,9 +50,11 @@ function onClick(): void {
           <span v-if="pickable && picked" class="position-card__picked">已选择</span>
         </h3>
         <p class="position-card__level">
-          {{ position.levelFrom }}
-          <span class="position-card__arrow">→</span>
-          {{ position.levelTo }}
+          <template v-if="showLevel">
+            {{ position.levelFrom }}
+            <span class="position-card__arrow">→</span>
+            {{ position.levelTo }}
+          </template>
           <span class="position-card__direction">{{ position.direction }}</span>
         </p>
       </div>

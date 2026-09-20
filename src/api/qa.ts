@@ -253,11 +253,22 @@ function parseFrame(frame: string): SseFrame {
   return { event, data }
 }
 
+/** 提问参数 */
+export interface AskOptions {
+  /**
+   * 学生选择的模型标识（见 `config/models.ts`）。
+   * 后端目前只有一套 LLM 配置，收到该字段也不会分流，先按协议传着。
+   */
+  model?: string
+  /** 流式增量回调：每收到一段就交给调用方拼接 */
+  onDelta: (text: string) => void
+}
+
 /** 流式提问：边收边回调，返回完整回答 */
 export async function askStream(
   sessionId: string,
   question: string,
-  onDelta: (text: string) => void,
+  options: AskOptions,
 ): Promise<string> {
   const studentId = requireStudentId()
   const headers: Record<string, string> = {
@@ -272,7 +283,12 @@ export async function askStream(
     response = await fetch(`${API_BASE_URL}/qa/sessions/${sessionId}/ask`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ student_id: Number(studentId), question, stream: true }),
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        question,
+        stream: true,
+        model: options.model,
+      }),
     })
   } catch {
     throw new ApiError(500, '连接后端失败，请确认服务已启动')
@@ -300,7 +316,7 @@ export async function askStream(
         const text = data?.text ?? ''
         if (text) {
           content += text
-          onDelta(text)
+          options.onDelta(text)
         }
       } else if (event === 'error') {
         // 后端明确回了失败原因（配置缺失、模型报错…）：这是业务错误，不要再重发一次
@@ -329,11 +345,11 @@ export async function askStream(
   return content
 }
 
-/** 非流式提问（流式不可用时的兜底） */
-export async function askOnce(sessionId: string, question: string): Promise<string> {
+/** 非流式提问（流式不可用时的兜底），`model` 语义同 `askStream` */
+export async function askOnce(sessionId: string, question: string, model?: string): Promise<string> {
   const studentId = requireStudentId()
   const result = await post<{ message: BackendMessage }>(`/qa/sessions/${sessionId}/ask`, {
-    body: { student_id: Number(studentId), question, stream: false },
+    body: { student_id: Number(studentId), question, stream: false, model },
   })
   return result.message.content
 }

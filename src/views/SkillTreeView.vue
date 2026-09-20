@@ -3,16 +3,36 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { Graph } from '@antv/g6'
 import type { EdgeData, GraphData, NodeData } from '@antv/g6'
 import { useRouter } from 'vue-router'
+import EmptyState from '@/components/EmptyState.vue'
+import PositionCard from '@/components/PositionCard.vue'
+import ProjectPickRow from '@/components/ProjectPickRow.vue'
 import { platformInfo } from '@/config/nav'
 import { useChatStore } from '@/stores/chat'
+import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
-import type { SkillNode as SkillNodeType } from '@/types'
+import { tierLabel, tierOrder } from '@/utils/format'
+import type { PositionView, Project, SkillNode as SkillNodeType } from '@/types'
 
 const router = useRouter()
 const skillStore = useSkillStore()
 const projectStore = useProjectStore()
+const positionStore = usePositionStore()
 const chat = useChatStore()
+
+/** 体系模式：技能体系（按技能点看项目，默认）/ 岗位体系（按岗位看项目） */
+const mode = ref<'skill' | 'job'>('skill')
+
+const modes: { value: 'skill' | 'job'; label: string }[] = [
+  { value: 'skill', label: '技能体系' },
+  { value: 'job', label: '岗位体系' },
+]
+
+/** 岗位体系：全部岗位（按技能点进度倒序，与成长中心同一份数据） */
+const jobs = computed(() => positionStore.rankedPositions)
+
+const jobVisible = ref(false)
+const activeJob = ref<PositionView | null>(null)
 
 const detailVisible = ref(false)
 const activeNode = ref<SkillNodeType | null>(null)
@@ -291,6 +311,29 @@ watch(progressKey, async (key) => {
   await graph.render()
 })
 
+/**
+ * 切换体系模式。
+ *
+ * G6 画布是挂在 DOM 上的实例：切到岗位体系要先销毁，切回技能体系再重建，
+ * 否则回来时拿到的是一张空白画布；岗位数据第一次切过去时才加载。
+ */
+watch(mode, async (value) => {
+  if (value === 'job') {
+    graphInstance.value?.destroy()
+    graphInstance.value = null
+    graphReady.value = false
+    void positionStore.load()
+    chat.contextLabel = '技能树 · 按岗位看它承担的实训项目'
+    return
+  }
+  chat.contextLabel = '技能树 · 按技能点看它训练的项目'
+  await nextTick()
+  builtKey = progressKey.value
+  measure()
+  createGraph()
+  if (measureRef.value) resizeObserver?.observe(measureRef.value)
+})
+
 function openDetail(node: SkillNodeType, systemName: string, color: string): void {
   activeNode.value = node
   activeSystemName.value = systemName
@@ -310,15 +353,38 @@ function goPractice(): void {
   })
 }
 
-function openProject(projectId: string): void {
+function openProject(project: Project): void {
   detailVisible.value = false
-  void router.push(`/map/project/${projectId}`)
+  jobVisible.value = false
+  void router.push(`/map/project/${project.id}`)
+}
+
+/**
+ * 岗位体系：岗位详情里的实训项目，按基础 / 进阶 / 拓展分组。
+ * 数据取自项目列表（与关卡地图同源），所以「+」的状态和地图完全一致。
+ */
+const jobProjectGroups = computed(() => {
+  const job = activeJob.value
+  if (!job) return []
+  const mine = projectStore.projects.filter((project) => project.positionId === job.id)
+  return tierOrder
+    .map((tier) => ({
+      tier,
+      name: tierLabel[tier],
+      projects: mine.filter((project) => project.tier === tier),
+    }))
+    .filter((group) => group.projects.length > 0)
+})
+
+function openJob(job: PositionView): void {
+  activeJob.value = job
+  jobVisible.value = true
 }
 
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(async () => {
-  chat.contextLabel = '技能树 · 查看技能成长路径'
+  chat.contextLabel = '技能树 · 按技能点看它训练的项目'
   await Promise.all([skillStore.load(), projectStore.load()])
   await nextTick()
   builtKey = progressKey.value
@@ -340,9 +406,21 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="skill-tree">
-    <!-- 页面标题已去掉，统计面板保留在顶部工具条里 -->
-    <div v-if="platformInfo.showSkillStats" class="page-toolbar">
-      <div class="stats">
+    <!-- 顶部工具条：体系模式切换 + 统计（技能体系）/ 提示（岗位体系） -->
+    <div class="page-toolbar">
+      <div class="mode-switch">
+        <button
+          v-for="item in modes"
+          :key="item.value"
+          class="mode-switch__item"
+          :class="{ 'is-on': mode === item.value }"
+          type="button"
+          @click="mode = item.value"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <div v-if="mode === 'skill' && platformInfo.showSkillStats" class="stats">
         <div class="stats__item">
           <span class="stats__value num">{{ stats.percent }}%</span>
           <span class="stats__label">整体进度</span>
@@ -356,9 +434,13 @@ onBeforeUnmount(() => {
           <span class="stats__label">技能点总数</span>
         </div>
       </div>
+      <p v-else-if="mode === 'job'" class="mode-hint">
+        共 <span class="num">{{ jobs.length }}</span> 个岗位 · 点开岗位看它承担的实训项目
+      </p>
     </div>
 
-    <section class="canvas">
+    <!-- 技能体系：技能点图谱（内容与之前一致） -->
+    <section v-if="mode === 'skill'" class="canvas">
       <header class="canvas__bar">
         <ul class="legend">
           <li v-for="system in systems" :key="system.id" class="legend__item">
@@ -381,6 +463,29 @@ onBeforeUnmount(() => {
           <div class="skeleton canvas__skeleton" />
         </div>
       </div>
+    </section>
+
+    <!-- 岗位体系：全部岗位，点开看该岗位下的项目 -->
+    <section v-else class="jobs panel">
+      <div v-if="positionStore.loading" class="jobs__grid">
+        <div v-for="index in 3" :key="index" class="job-skeleton skeleton" />
+      </div>
+      <div v-else-if="jobs.length" class="jobs__grid">
+        <PositionCard
+          v-for="job in jobs"
+          :key="job.id"
+          :position="job"
+          :show-level="false"
+          @open="openJob"
+        />
+      </div>
+      <EmptyState
+        v-else
+        title="还没有可查看的岗位"
+        description="教师端给岗位关联技能点后，这里会列出岗位与它承担的实训项目。"
+        action-text="按技能体系看"
+        @action="mode = 'skill'"
+      />
     </section>
 
     <!-- 节点详情卡 -->
@@ -418,20 +523,9 @@ onBeforeUnmount(() => {
 
         <div class="detail__row">
           <span class="detail__row-label">关联项目</span>
-          <ul v-if="relatedProjects.length" class="projects">
+          <ul v-if="relatedProjects.length" class="project-list">
             <li v-for="project in relatedProjects" :key="project.id">
-              <button class="project" type="button" @click="openProject(project.id)">
-                <span class="project__name">{{ project.name }}</span>
-                <span class="project__bar">
-                  <span
-                    class="project__bar-fill"
-                    :style="{ width: `${skillStore.projectPercent(project)}%` }"
-                  />
-                </span>
-                <span class="project__percent num">
-                  {{ Math.round(skillStore.projectPercent(project)) }}%
-                </span>
-              </button>
+              <ProjectPickRow :project="project" @open="openProject" />
             </li>
           </ul>
           <span v-else class="detail__muted">暂无关联项目，可联系教师端补充</span>
@@ -445,6 +539,58 @@ onBeforeUnmount(() => {
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 岗位详情卡：该岗位承担的实训项目，按基础 / 进阶 / 拓展分组 -->
+    <el-dialog v-model="jobVisible" width="620px" align-center>
+      <template #header>
+        <div class="detail-head">
+          <span class="detail-head__text">
+            <span class="detail-head__name">{{ activeJob?.name }}</span>
+            <span class="detail-head__system">
+              <span class="detail-head__dot" :style="{ background: '#1e7be8' }" />
+              {{ activeJob?.direction }}
+            </span>
+          </span>
+        </div>
+      </template>
+
+      <div class="job-detail">
+        <p class="job-detail__desc">{{ activeJob?.description }}</p>
+
+        <ul class="job-detail__stats">
+          <li>
+            技能点进度 <span class="num">{{ activeJob?.percent ?? 0 }}%</span>
+            <span class="job-detail__sub">
+              {{ activeJob?.skillDone ?? 0 }}/{{ activeJob?.skillTotal ?? 0 }} 个已完成
+            </span>
+          </li>
+          <li>
+            关联项目 <span class="num">{{ activeJob?.projectTotal ?? 0 }}</span> 个
+            <span class="job-detail__sub">已完成 {{ activeJob?.projectDone ?? 0 }} 个</span>
+          </li>
+        </ul>
+
+        <template v-if="jobProjectGroups.length">
+          <section v-for="group in jobProjectGroups" :key="group.tier" class="job-group">
+            <h4 class="job-group__title">
+              {{ group.name }}
+              <span class="job-group__count num">{{ group.projects.length }}</span>
+            </h4>
+            <ul class="project-list">
+              <li v-for="project in group.projects" :key="project.id">
+                <ProjectPickRow :project="project" @open="openProject" />
+              </li>
+            </ul>
+          </section>
+        </template>
+        <p v-else class="detail__muted">这个岗位下还没有已发布的实训项目，可联系教师端补充。</p>
+      </div>
+
+      <template #footer>
+        <el-button @click="jobVisible = false">关闭</el-button>
+        <el-button type="primary" @click="router.push('/map')">去关卡地图</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -452,6 +598,45 @@ onBeforeUnmount(() => {
 .skill-tree {
   display: flex;
   flex-direction: column;
+}
+
+/* —— 体系切换：技能体系 / 岗位体系 —— */
+.mode-switch {
+  display: inline-flex;
+  /* 工具条默认右对齐，这里推到最左，统计/提示仍留在右侧 */
+  margin-right: auto;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.mode-switch__item {
+  padding: 6px 16px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.mode-switch__item:hover {
+  color: var(--brand-600);
+}
+
+.mode-switch__item.is-on {
+  background: var(--brand-050);
+  color: var(--brand-600);
+}
+
+.mode-hint {
+  color: var(--ink-3);
+  font-size: 12.5px;
 }
 
 /* —— 统计面板 —— */
@@ -487,6 +672,82 @@ onBeforeUnmount(() => {
   color: var(--ink-3);
   font-size: 11.5px;
   letter-spacing: 0.06em;
+}
+
+/* —— 岗位体系：岗位清单 —— */
+.jobs {
+  padding: 18px 20px 22px;
+}
+
+.jobs__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.job-skeleton {
+  height: 208px;
+  border-radius: var(--r-md);
+}
+
+/* —— 岗位详情：项目按层级分组 —— */
+.job-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.job-detail__desc {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.job-detail__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--brand-050);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.job-detail__stats .num {
+  color: var(--brand-600);
+  font-weight: 700;
+}
+
+.job-detail__sub {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+.job-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.job-group__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-1);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.job-group__count {
+  padding: 0 7px;
+  border-radius: var(--r-chip);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 /* —— 画布：浅色底 + 点阵，与站点整体色调一致 —— */
@@ -683,63 +944,11 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
 }
 
-.projects {
+/* 项目行：两个体系共用 components/ProjectPickRow.vue，这里只管列表间距 */
+.project-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.project {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-chip);
-  background: var(--surface);
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
-}
-
-.project:hover {
-  border-color: var(--brand-300);
-  background: var(--brand-050);
-}
-
-.project__name {
-  flex: 1;
-  min-width: 0;
-  color: var(--ink-1);
-  font-size: 12.5px;
-  font-weight: 600;
-  text-align: left;
-}
-
-.project__bar {
-  width: 84px;
-  height: 4px;
-  flex: none;
-  overflow: hidden;
-  border-radius: var(--r-bar);
-  background: var(--line-soft);
-}
-
-.project__bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--r-bar);
-  background: var(--brand-500);
-}
-
-.project__percent {
-  width: 36px;
-  flex: none;
-  color: var(--ink-2);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: right;
 }
 
 /* --------------------------------------------------------------------------

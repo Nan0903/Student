@@ -645,6 +645,9 @@ export const projects: Project[] = PROJECT_SEEDS.map((seed) => {
     modules,
     // 项目资料由教师端上传，Mock 里没有
     files: [],
+    // Mock 里的项目一律视为学生自己挑进来的（真实数据由技能树的「+」决定）
+    picked: true,
+    isRequired: false,
   }
 })
 

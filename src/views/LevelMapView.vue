@@ -6,7 +6,6 @@ import EmptyState from '@/components/EmptyState.vue'
 import ProjectCard from '@/components/ProjectCard.vue'
 import { useChatStore } from '@/stores/chat'
 import { useEnumStore } from '@/stores/enums'
-import { usePositionStore } from '@/stores/position'
 import { useProjectStore } from '@/stores/project'
 import { useSkillStore } from '@/stores/skill'
 import { tierLabel, tierOrder } from '@/utils/format'
@@ -15,7 +14,6 @@ import type { Project, ProjectSkillTag } from '@/types'
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
-const positionStore = usePositionStore()
 const skillStore = useSkillStore()
 const chat = useChatStore()
 const enums = useEnumStore()
@@ -25,19 +23,42 @@ const selectedPosition = ref<string>(ALL)
 const highlightProjectId = ref('')
 const skillFilter = ref('')
 
-/** 图例：文案取后端字典（student_project_status），「未解锁」是前端的锁定态、字典里没有 */
+/**
+ * 图例：文案取后端字典（student_project_status）。
+ * 地图上只有学生自己加入的项目，没有「未解锁」这一态，锁定留给项目内部的关卡。
+ */
 const legend = computed(() => [
-  { tone: 'lock', label: '未解锁' },
   { tone: 'todo', label: enums.label('student_project_status', 'NOT_STARTED', '可挑战') },
   { tone: 'wip', label: enums.label('student_project_status', 'IN_PROGRESS', '进行中') },
   { tone: 'done', label: enums.label('student_project_status', 'COMPLETED', '已完成') },
 ])
 
-const loading = computed(() => projectStore.loading || positionStore.loading)
+const loading = computed(() => projectStore.loading || skillStore.loading)
+
+/**
+ * 地图上只放「我的实训」里的项目 = 学生自己挑的（技能树点「+」）∪ 老师发任务点名必修的。
+ * 两个来源都在项目列表接口里带了标记，所以不用额外再拉一次清单。
+ */
+const mapProjects = computed(() =>
+  projectStore.projects.filter((project) => project.picked || project.isRequired),
+)
+
+/**
+ * 岗位筛选的候选：只列已加入项目涉及的岗位（岗位名跟着项目一起从列表接口来），
+ * 所以学生加入哪个岗位的项目，地图上才出现哪个岗位；只有一个岗位时也照常展示。
+ */
+const mapPositions = computed(() => {
+  const seen = new Map<string, string>()
+  for (const project of mapProjects.value) {
+    if (!project.positionId || seen.has(project.positionId)) continue
+    seen.set(project.positionId, project.positionName ?? '未关联岗位')
+  }
+  return [...seen].map(([id, name]) => ({ id, name }))
+})
 
 const filteredProjects = computed(() => {
-  if (selectedPosition.value === ALL) return projectStore.projects
-  return projectStore.projects.filter((project) => project.positionId === selectedPosition.value)
+  if (selectedPosition.value === ALL) return mapProjects.value
+  return mapProjects.value.filter((project) => project.positionId === selectedPosition.value)
 })
 
 const skillProjectIds = computed(() => {
@@ -52,11 +73,6 @@ const skillName = computed(() =>
 /** 体系取色表：项目卡上的技能点标签跟随所属体系配色 */
 const systemColors = computed(
   () => new Map(skillStore.systems.map((system) => [system.id, system.color])),
-)
-
-/** 岗位名表：项目卡上展示「所属岗位」 */
-const positionNames = computed(
-  () => new Map(positionStore.positions.map((position) => [position.id, position.name])),
 )
 
 /** 项目挂靠的技能点 → 卡片上的小标签 */
@@ -102,6 +118,12 @@ function openProject(project: Project): void {
   void router.push(`/map/project/${project.id}`)
 }
 
+/** 清掉岗位与技能筛选，回到「全部已加入的项目」 */
+function clearFilters(): void {
+  selectedPosition.value = ALL
+  skillFilter.value = ''
+}
+
 /** 岗位筛选与技能参数同步到地址栏，便于分享与回退 */
 function syncQuery(): void {
   const query: Record<string, string> = {}
@@ -115,14 +137,17 @@ watch([selectedPosition, skillFilter], () => syncQuery())
 
 onMounted(async () => {
   chat.contextLabel = '关卡地图 · 查看可挑战的实训项目'
-  await Promise.all([projectStore.load(), positionStore.load(), skillStore.load()])
+  await Promise.all([projectStore.load(), skillStore.load()])
 
   const positionQuery = typeof route.query.position === 'string' ? route.query.position : ''
   const skillQuery = typeof route.query.skill === 'string' ? route.query.skill : ''
   const projectQuery = typeof route.query.project === 'string' ? route.query.project : ''
 
-  // 默认展示全部岗位：后端一个项目只绑一个岗位，按当前岗位过滤经常会是一张空列表
-  selectedPosition.value = positionQuery || ALL
+  // 岗位筛选只在「已加入项目涉及的岗位」里选，历史地址栏里的岗位已失效就回落到全部
+  selectedPosition.value =
+    positionQuery && mapPositions.value.some((item) => item.id === positionQuery)
+      ? positionQuery
+      : ALL
   skillFilter.value = skillQuery
   highlightProjectId.value = projectQuery
 })
@@ -144,8 +169,8 @@ onMounted(async () => {
       </ul>
     </div>
 
-    <!-- 岗位筛选 -->
-    <div class="filter panel">
+    <!-- 岗位筛选：只列已加入项目涉及的岗位 -->
+    <div v-if="mapPositions.length" class="filter panel">
       <span class="filter__label">岗位筛选</span>
       <div class="filter__tags">
         <button
@@ -157,7 +182,7 @@ onMounted(async () => {
           全部岗位
         </button>
         <button
-          v-for="position in positionStore.positions"
+          v-for="position in mapPositions"
           :key="position.id"
           class="filter-tag"
           :class="{ 'is-on': selectedPosition === position.id }"
@@ -202,7 +227,7 @@ onMounted(async () => {
             <ProjectCard
               :project="project"
               :skills="skillTags(project)"
-              :position-name="positionNames.get(project.positionId)"
+              :position-name="project.positionName"
               @open="openProject"
             />
           </div>
@@ -210,12 +235,22 @@ onMounted(async () => {
       </section>
     </template>
 
+    <!-- 一条都没有：入口在技能树（自己挑）或教师端任务（必修） -->
+    <div v-else-if="!mapProjects.length" class="panel">
+      <EmptyState
+        title="还没有加入任何项目"
+        description="去技能树（技能体系或岗位体系）点开一个技能点 / 岗位，在项目右边点「+」加入；老师布置的必修项目也会自动出现在这里。"
+        action-text="去技能树挑项目"
+        @action="router.push('/skill-tree')"
+      />
+    </div>
+
     <div v-else class="panel">
       <EmptyState
-        title="该岗位暂无可挑战项目"
-        description="切换其他岗位，或先完成基础实训解锁更多项目。"
-        action-text="查看全部岗位"
-        @action="selectedPosition = ALL"
+        title="当前筛选下没有项目"
+        description="换个岗位看看，或者清掉技能筛选，显示全部已加入的项目。"
+        action-text="查看全部已加入项目"
+        @action="clearFilters"
       />
     </div>
   </div>

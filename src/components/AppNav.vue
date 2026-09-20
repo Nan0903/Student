@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Briefcase, Compass, MapLocation, Medal, Odometer, Share } from '@element-plus/icons-vue'
+import { Compass, MapLocation, Medal, Odometer, Share } from '@element-plus/icons-vue'
 import { prefetchRoute } from '@/router'
 import { navItems, platformInfo } from '@/config/nav'
 import type { NavItem } from '@/types'
@@ -20,7 +20,6 @@ const navIcons: Record<string, Component> = {
   growth: Odometer,
   'skill-tree': Share,
   map: MapLocation,
-  positions: Briefcase,
   certification: Medal,
 }
 

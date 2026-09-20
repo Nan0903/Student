@@ -5,6 +5,7 @@ const PROFILE_KEY = 'spu.student.profile'
 const DRAFT_KEY = 'spu.student.draft'
 const CHAT_KEY = 'spu.student.chat'
 const ASSISTANT_KEY = 'spu.student.assistant'
+const ASSISTANT_MODEL_KEY = 'spu.student.assistant.model'
 const UI_KEY = 'spu.student.ui'
 
 /** 界面偏好：目前只有左侧导航是否收起 */
@@ -58,6 +59,10 @@ export const setChatCache = (messages: unknown): void => write(CHAT_KEY, message
 /** AI 悬浮球位置：用户拖动后记住，下次进来还在原地 */
 export const getAssistantSpot = <T>(): T | null => read<T>(ASSISTANT_KEY)
 export const setAssistantSpot = (value: unknown): void => write(ASSISTANT_KEY, value)
+
+/** AI 助教选择的对话模型：本地记忆，换设备不跟随（后端暂未按模型分流） */
+export const getAssistantModel = (): string | null => read<string>(ASSISTANT_MODEL_KEY)
+export const setAssistantModel = (id: string): void => write(ASSISTANT_MODEL_KEY, id)
 
 export const getUiPrefs = (): UiPrefs | null => read<UiPrefs>(UI_KEY)
 export const setUiPrefs = (value: UiPrefs): void => write(UI_KEY, value)

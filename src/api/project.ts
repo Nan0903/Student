@@ -15,7 +15,7 @@
 import { questionId } from '@/utils/answer'
 import { formatDateTime } from '@/utils/format'
 import { resolveApiPath } from './file'
-import { get, post, put, toNumber, type Page } from './http'
+import { del, get, post, put, toNumber, type Page } from './http'
 import { requireStudentId } from './session'
 import type {
   AiReview,
@@ -56,7 +56,6 @@ interface BackendItemsJson {
 interface BackendProjectModule {
   id: number
   stage_no: number
-  stage_key: string
   stage_name: string
   required: boolean
   weight: string | number
@@ -83,7 +82,6 @@ interface BackendProjectFile {
 
 interface BackendStageTemplate {
   id: number
-  stage_key: string
   stage_name: string
   description: string | null
 }
@@ -139,7 +137,6 @@ interface BackendLevelDetail {
   project_module_id: number
   attempt_stage_id: number | null
   stage_no: number
-  stage_key: string | null
   stage_name: string
   description: string | null
   requirement: string | null
@@ -262,6 +259,11 @@ interface BackendStudentTrainingProject {
   project_level: string
   job_id: number | null
   job_name: string | null
+  /** 是否在学生自己的「我的实训」清单里 */
+  picked: boolean
+  /** 是否老师发任务点名必修 */
+  is_required: boolean
+  required_deadline_at: string | null
   status: string
   best_score: string | number | null
   total_score: string | number | null
@@ -270,10 +272,8 @@ interface BackendStudentTrainingProject {
   level_done: number
   skill_nodes: {
     skill_node_id: number
-    node_code: string
     node_name: string
     tree_id: number
-    tree_code: string | null
     tree_name: string | null
   }[]
 }
@@ -286,7 +286,11 @@ function toProjectListItem(item: BackendStudentTrainingProject): Project {
     name: item.project_name,
     tier: TIER_BY_LEVEL[item.project_level] ?? 'basic',
     positionId: item.job_id === null ? '' : String(item.job_id),
+    positionName: item.job_name ?? undefined,
     skillIds: (item.skill_nodes ?? []).map((node) => String(node.skill_node_id)),
+    picked: Boolean(item.picked),
+    isRequired: Boolean(item.is_required),
+    requiredDeadlineAt: item.required_deadline_at ?? undefined,
     status: toProjectStatus(item.status),
     levelTotal: item.level_total,
     levelDone: item.level_done,
@@ -400,7 +404,8 @@ function toProject(
   const modules = detail.modules
     .slice()
     .sort((left, right) => left.stage_no - right.stage_no)
-    .map((module) => toTrainModule(module, templateDescriptions.get(module.stage_key) ?? ''))
+    // 关卡简介来自模块库，按「关卡名称」关联：后端的编码列已删除，名称是唯一标识
+    .map((module) => toTrainModule(module, templateDescriptions.get(module.stage_name) ?? ''))
 
   const levelTotal = modules.length
   const latest = latestAttempt(record)
@@ -418,6 +423,10 @@ function toProject(
     tier: TIER_BY_LEVEL[detail.project_level] ?? 'basic',
     positionId: detail.job_id === null ? '' : String(detail.job_id),
     skillIds,
+    // 详情走的是教师侧的项目主数据：岗位名、是否自己挑的、是否必修都只有列表接口带，
+    // 进详情时由 store 合并列表里那份（见 stores/project.ts 的 loadProject）。
+    picked: false,
+    isRequired: false,
     status: record ? toProjectStatus(record.status) : 'not_started',
     levelTotal,
     levelDone,
@@ -584,7 +593,7 @@ export async function fetchProject(projectId: string): Promise<Project | null> {
   ])
 
   const templateDescriptions = new Map(
-    templates.items.map((item) => [item.stage_key, item.description ?? '']),
+    templates.items.map((item) => [item.stage_name, item.description ?? '']),
   )
   return toProject(
     detail,
@@ -613,6 +622,30 @@ export async function startWork(projectId: string): Promise<ProjectWork> {
   const studentId = requireStudentId()
   await post(`/students/${studentId}/projects/${projectId}/start`)
   return loadWork(projectId)
+}
+
+/**
+ * 把项目加进「我的实训」（技能树节点详情里的「+」）。
+ *
+ * 后端是批量、幂等接口：已经加过的跳过；项目没发布会被拒绝。
+ * 加入清单不影响技能进度，也不影响闯关记录（清单只是"我要练这些"）。
+ */
+export async function addToMyProjects(projectIds: string[]): Promise<void> {
+  const studentId = requireStudentId()
+  await post(`/students/${studentId}/my-projects`, {
+    body: { project_ids: projectIds.map((id) => Number(id)) },
+  })
+}
+
+/**
+ * 从「我的实训」移出。
+ *
+ * 幂等；如果这个项目同时是老师点名的必修，移出后仍会出现在列表里（必修是任务实时算的），
+ * 后端会在 msg 里说明这一点。闯关记录、成绩、技能进度都不受影响。
+ */
+export async function removeFromMyProjects(projectId: string): Promise<void> {
+  const studentId = requireStudentId()
+  await del(`/students/${studentId}/my-projects/${projectId}`)
 }
 
 /**

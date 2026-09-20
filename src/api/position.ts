@@ -12,14 +12,12 @@ import type { Position, PositionDifficulty } from '@/types'
 
 interface BackendJobSkill {
   skill_node_id: number
-  node_code: string
   node_name: string
   progress: number
 }
 
 interface BackendJobSkillGroup {
   tree_id: number
-  tree_code: string | null
   tree_name: string | null
   skill_total_count: number
   skill_done_count: number

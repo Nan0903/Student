@@ -9,6 +9,7 @@ declare module 'vue-router' {
     nav?: string
     /** 免登录页面 */
     public?: boolean
+    /** 页面名，浏览器标签里统一拼成「{title} · 岗位闯关式实训平台」 */
     title?: string
   }
 }
@@ -35,7 +36,7 @@ const routes: RouteRecordRaw[] = [
         path: 'skill-tree',
         name: 'skill-tree',
         component: () => import('@/views/SkillTreeView.vue'),
-        meta: { nav: 'skill-tree', title: '技能树' },
+        meta: { nav: 'skill-tree', title: '岗位与技能体系' },
       },
       {
         path: 'map',
@@ -55,12 +56,6 @@ const routes: RouteRecordRaw[] = [
         name: 'map-history',
         component: () => import('@/views/HistoryView.vue'),
         meta: { nav: 'map', title: '历史记录' },
-      },
-      {
-        path: 'positions',
-        name: 'positions',
-        component: () => import('@/views/PositionSelectView.vue'),
-        meta: { nav: 'positions', title: '岗位选择' },
       },
       {
         path: 'certification',

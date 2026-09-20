@@ -68,6 +68,9 @@ function onClick(): void {
     >
       <header class="project-card__head">
         <span class="pill" :class="`pill--${tone}`">{{ label }}</span>
+        <span v-if="project.isRequired" class="project-card__required" title="老师发任务点名要求完成">
+          必修
+        </span>
         <span class="project-card__score">
           <span class="project-card__score-label">最高分</span>
           <span class="project-card__score-value num" :class="{ 'is-empty': score == null }">
@@ -156,14 +159,26 @@ function onClick(): void {
 .project-card__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+/* 必修标记紧跟状态药丸，最高分靠右 */
+.project-card__required {
+  flex: none;
+  padding: 0 7px;
+  border-radius: var(--r-chip);
+  background: var(--wip-bg);
+  color: #b35c00;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .project-card__score {
   display: flex;
   align-items: baseline;
   gap: 5px;
+  margin-left: auto;
 }
 
 .project-card__score-label {

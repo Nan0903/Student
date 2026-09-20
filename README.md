@@ -2,7 +2,7 @@
 
 面向高职院校实训教学的学生端前端。以「岗位」为导向，把课程实训与技能成长串成一条线：
 
-> 选岗位 → 看技能树 → 逐关闯关 → 提交作答 → AI 评审 → 申请教师复核 → 认证
+> 看技能树（技能体系 / 岗位体系）→ 挑项目加入关卡地图 → 逐关闯关 → 提交作答 → AI 评审 → 申请教师复核 → 认证
 
 数据来自同仓库的后端 `training_platform`（FastAPI），前端不再依赖本地假数据：
 岗位推荐、技能树进度、实训项目、闯关作答、AI 评审、AI 问答与历史记录都走真实接口；
@@ -67,7 +67,8 @@ npm run preview     # 本地预览 dist/ 的构建结果
 | 功能 | 接口 |
 | --- | --- |
 | 登录（按学号取档案） | `GET /users`、`GET /classes`、`GET /classes/{id}/students` |
-| 岗位推荐 / 选岗 | `GET /students/{id}/job-recommendations`、`GET/POST /students/{id}/jobs` |
+| 岗位推荐（成长中心的岗位卡片） | `GET /students/{id}/job-recommendations`、`GET /students/{id}/jobs` |
+| 我的实训（自己挑的 ∪ 老师点名必修） | `GET/POST /students/{id}/my-projects`（批量、幂等）、`DELETE /students/{id}/my-projects/{project_id}` |
 | 技能树进度 | `GET /students/{id}/skill-tree-progress` |
 | 项目列表 | `GET /students/{id}/training-projects` |
 | 项目详情（关卡/作答/提交/评语，一次拿全） | `GET /students/{id}/projects/{project_id}` |
@@ -136,15 +137,17 @@ Student/
 │  │  ├─ AppNav.vue              # 左侧主导航：分组标题、线性图标、选中态、页脚平台信息与收起按钮
 │  │  ├─ PositionCard.vue        # 岗位卡片：compact（列表）/ select（选择页）两种形态
 │  │  ├─ ProjectCard.vue         # 项目卡片：状态文案取 /enums 字典，关联技能点标签
+│  │  ├─ ProjectPickRow.vue      # 「项目 + 加入关卡地图」一行（技能体系与岗位体系共用）
 │  │  ├─ LevelStepper.vue        # 关卡步骤条：已完成可回看，未解锁禁用
 │  │  ├─ AiReviewPanel.vue       # 评审结果：总分环、各维度理由、教师评语、撤回/提异议入口
-│  │  ├─ AiAssistantDock.vue     # AI 助教对话浮窗（接后端 /qa，SSE 流式）
+│  │  ├─ AiAssistantDock.vue     # AI 助教浮窗：会话历史、模型选择、SSE 流式问答
 │  │  ├─ EmptyState.vue          # 空态 / 未解锁引导
 │  │  └─ PageTitle.vue           # 旧的页面标题组件（页面标题已移除，当前无引用）
 │  │
 │  ├─ config/
 │  │  ├─ env.ts                  # 运行时配置：API 前缀、演示学号
-│  │  └─ nav.ts                  # 主导航配置（含分组）、平台信息（校名、学院、版本、开关）
+│  │  ├─ nav.ts                  # 主导航配置（含分组）、平台信息（校名、学院、版本、开关）
+│  │  └─ models.ts               # AI 助教可选模型清单（三个选项当前都走后端同一套 DeepSeek 配置）
 │  │
 │  ├─ layouts/
 │  │  └─ DefaultLayout.vue       # 登录后外壳：顶栏 + 可收起的左侧导航 + 内容区 + 悬浮 AI 助教
@@ -174,12 +177,11 @@ Student/
 │  │
 │  └─ views/                     # 页面（全部按路由懒加载）
 │     ├─ LoginView.vue           # 身份入口页（学生端 / 教师端）
-│     ├─ GrowthCenterView.vue    # 成长中心：我的岗位、实训进度概览
-│     ├─ SkillTreeView.vue       # 技能树：四大体系 + 节点详情
-│     ├─ LevelMapView.vue        # 关卡地图：岗位筛选 + 三层级分组
+│     ├─ GrowthCenterView.vue    # 成长中心：我的推荐岗位、实训进度概览
+│     ├─ SkillTreeView.vue       # 技能树：技能体系（技能点图谱 + 节点详情）/ 岗位体系（岗位清单 + 岗位详情）
+│     ├─ LevelMapView.vue        # 关卡地图：只列学生在技能树里加入的项目，按三层级分组 + 岗位筛选
 │     ├─ ProjectLevelView.vue    # 关卡详情：步骤条、作答、附件、提交、评审结果、项目资料
 │     ├─ HistoryView.vue         # 历史记录：提交记录（项目筛选 + 评审展开）、项目闯关记录
-│     ├─ PositionSelectView.vue  # 岗位选择：筛选、匹配度排序、确认切换
 │     ├─ CertificationView.vue   # 认证中心：认证条件、证书列表、鉴定书预览
 │     └─ NotFoundView.vue        # 404 兜底
 │
@@ -200,11 +202,10 @@ Student/
 | --- | --- | --- |
 | `/login` | 身份入口 | 学生端 / 教师端两条入口，也支持带 `?key=xxx` 的回调（后端 SSO 未就绪时 key 当学号用） |
 | `/growth` | 成长中心 | 默认首页，`/` 会重定向到这里 |
-| `/skill-tree` | 技能树 | 四大体系，节点可点开详情 |
-| `/map` | 关卡地图 | 按岗位筛选、按层级分组，支持从其它页面带筛选参数进入 |
+| `/skill-tree` | 技能树 | 顶部切换「技能体系 / 岗位体系」：技能体系是四大体系的技能点图谱（点节点看它训练的关联项目）；岗位体系列出全部岗位，点开岗位看它承担的实训项目。两个体系的每个项目都有「+」加入关卡地图 |
+| `/map` | 关卡地图 | 只显示学生已加入的项目（技能树节点详情点「+」加入），按层级分组、按岗位筛选；一条未加入时引导去技能树 |
 | `/map/project/:projectId` | 关卡详情 | 主导航高亮仍停留在「关卡地图」 |
 | `/map/history` | 历史记录 | 从关卡地图顶部工具条进入（无独立导航项），主导航高亮仍是「关卡地图」 |
-| `/positions` | 岗位选择 | 完成 1 个基础项目后可切换目标岗位 |
 | `/certification` | 认证中心 | 认证条件、证书状态、鉴定书预览（数据仍为 mock） |
 | `/:pathMatch(.*)*` | 404 | 兜底页 |
 
@@ -240,6 +241,11 @@ API（api/*.ts）             ← 接口签名与后端字段映射（snake_case
 | 换某个接口或调整字段映射 | 对应的 `api/*.ts`（页面与 store 不用动） |
 | 加一个新的后端接口调用 | 在 `api/` 里加函数（用 `http.ts` 的 `get/post/put/patch/del`），再在 store 里调用 |
 | 调整状态中文文案 | 后端 `/api/enums` 字典；前端兜底在 `utils/format.ts` |
+| 调整 AI 助教可选的模型 | `config/models.ts`（id 要与后端认的标识一致）；后端接多模型后只需改这一处 |
+| 调整关卡地图上能出现哪些项目 | 学生自己在技能树节点详情点「+」加入；过滤逻辑在 `views/LevelMapView.vue` 的 `mapProjects` |
+| 调整技能树的两种体系模式 | `views/SkillTreeView.vue`：顶部 `mode`（skill / job）切换，岗位体系的分组在 `jobProjectGroups` |
+| 改浏览器标签标题 | `router/index.ts` 的 `meta.title`，标签统一拼成「{title} · 岗位闯关式实训平台」 |
+| 岗位卡片要不要显示「初级 → 中级」 | `components/PositionCard.vue` 的 `showLevel`（默认显示；技能树的岗位体系里传 `false`，只留方向标签） |
 | 调整关卡步骤 | 后端「模块库 + 项目关卡组成」，页面按 `modules` 渲染，没有写死步骤数量 |
 | 改登录/鉴权规则 | `router/index.ts` 的守卫 + `stores/user.ts`、`api/auth.ts` |
 
@@ -257,7 +263,12 @@ API（api/*.ts）             ← 接口签名与后端字段映射（snake_case
 
 - 只实现学生端。教师端未开放，入口页点击后会给出提示。
 - **AI 评审**走后端真链路：整单提交后自动调用 `POST /submissions/{id}/ai-review`（后端召回该项目的评分标准 → 大模型打分 → 落库结算）；失败时前端降级为「待评审」并把原因显示在判分面板里。
-- **AI 助教**接后端 `/qa`：会话与消息落库、SSE 流式回答、失败可重试；一期不接知识库检索，回答会带「未接入知识库检索」的提示。
+- **AI 助教**接后端 `/qa`：会话与消息落库、SSE 流式回答、失败可重试；会话历史支持切换 / 改名 / 关闭 / 删除与往上翻更早的消息（后端按保留期过滤）；一期不接知识库检索，回答会带「未接入知识库检索」的提示。
+- **AI 助教的模型选择目前是占位实现**：浮窗里可选 DeepSeek / Kimi / MiMo，选择记在本地并随提问提交（请求体的 `model` 字段），但后端 `ai.llm` 只有一套 DeepSeek 配置、也不解析这个字段，所以三个选项的回答实际都来自 DeepSeek。后端按模型分流后前端不用改，只要让 `src/config/models.ts` 里的 id 与后端认的标识对齐。
 - **历史记录**（`/map/history`）走真链路：提交记录按项目筛选 + 分页，展开某一行时才去拉该次提交的 AI / 教师评审；项目闯关记录展示状态、关卡进度与最高分，已通过的项目可直接「重新挑战」（后端新建一轮闯关，历史成绩保留在最高分字段里，前端不做数据清理）。
+- **关卡地图 = 学生的「我的实训」清单**：后端口径是「自己挑的 ∪ 老师发任务点名必修的」（`GET /students/{id}/my-projects`，项目列表里带 `picked` / `is_required` / `sources`）。自己挑的入口在技能树（技能体系 / 岗位体系）项目行右边的「+」，点它是 `POST /students/{id}/my-projects`（批量、幂等，写 `student_project_pick` 清单表），加入后变「已加入」，再点可移出；**老师点名必修的项目即使移出也仍会留在列表里**（必修是任务实时算的，撤回任务后才消失），所以地图上的卡片带「必修」标记。地图顶部的岗位筛选只列清单里项目涉及的岗位，岗位名跟着项目数据一起来。
+- **技能树有两条挑项目的路径**：技能体系按技能点（技能点详情 → 关联项目），岗位体系按岗位（岗位清单 → 岗位详情 → 该岗位承载的项目），两边的项目行都用 `components/ProjectPickRow.vue`，所以「+ / 已加入」状态与关卡地图完全同源。技能体系那张 G6 图在切到岗位体系时会销毁、切回时重建。
+- **前端不再依赖后端的编码列**：后端已删掉 `skill_tree.tree_code` / `skill_node.node_code` / `project_stage_template.stage_key`（唯一约束落到名称上），所以体系 id 改用 `tree-<id>`、体系颜色按返回顺序取、关卡简介按「关卡名称」去模块库里关联。
+- **岗位选择页已下线**：导航入口、`/positions` 路由与页面文件都已删除，成长中心只保留「我的推荐岗位」卡片（去掉了「查看全部岗位」入口）。后端 `/students/{id}/jobs`（选目标岗位）接口保留未动，前端 `api/position.ts` 里的 `selectPosition` 目前没有页面调用。
 - **认证中心**与顶栏的消息/待办角标仍是本地 mock —— 后端还没有证书与通知接口。
 - 技能鉴定书为静态预览样式，暂不支持生成与下载。

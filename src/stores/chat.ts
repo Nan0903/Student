@@ -15,7 +15,9 @@ import {
   type QaSession,
 } from '@/api/qa'
 import { ApiError } from '@/api/http'
+import { ASSISTANT_MODELS, normalizeAssistantModel } from '@/config/models'
 import { formatDateTime, localId, nowText } from '@/utils/format'
+import { getAssistantModel, setAssistantModel } from '@/utils/storage'
 import type { ChatMessage, ChatQuota } from '@/types'
 
 /** 单次对话只保留前后三轮问答（后端也按 ai.qa.history_rounds 裁，这里只用于本地上下文展示） */
@@ -64,9 +66,14 @@ export const useChatStore = defineStore('chat', () => {
   const historyOpen = ref(false)
   /** 当前页面上下文提示（随路由/项目自动变化） */
   const contextLabel = ref('成长中心')
+  /** 学生选择的对话模型，见 `config/models.ts`；只决定后续提问用哪个模型 */
+  const model = ref<string>(normalizeAssistantModel(getAssistantModel()))
 
   const usedToday = computed(() => quota.value.used)
   const canSend = computed(() => !sending.value)
+  const modelLabel = computed(
+    () => ASSISTANT_MODELS.find((item) => item.id === model.value)?.label ?? model.value,
+  )
   const currentSession = computed(
     () => sessions.value.find((item) => item.id === sessionId.value) ?? null,
   )
@@ -215,6 +222,13 @@ export const useChatStore = defineStore('chat', () => {
     historyOpen.value = open ?? !historyOpen.value
   }
 
+  /** 切换对话模型：立即记忆到本地，已在生成中的回答不受影响 */
+  function setModel(id: string): void {
+    const next = normalizeAssistantModel(id)
+    model.value = next
+    setAssistantModel(next)
+  }
+
   async function init(): Promise<void> {
     if (messages.value.length > 0 && sessionId.value) return
     loading.value = true
@@ -255,9 +269,12 @@ export const useChatStore = defineStore('chat', () => {
       push({ id: pendingId, role: 'assistant', content: '', createdAt: nowText() })
 
       try {
-        const answer = await askStream(sessionId.value, text, (delta) => {
-          const current = messages.value.find((item) => item.id === pendingId)
-          if (current) replace(pendingId, { content: current.content + delta })
+        const answer = await askStream(sessionId.value, text, {
+          model: model.value,
+          onDelta: (delta) => {
+            const current = messages.value.find((item) => item.id === pendingId)
+            if (current) replace(pendingId, { content: current.content + delta })
+          },
         })
         replace(pendingId, { content: answer })
       } catch (streamError) {
@@ -267,7 +284,7 @@ export const useChatStore = defineStore('chat', () => {
         let reason = streamError instanceof Error ? streamError.message : '回复没有送达'
         if (!isBusinessError) {
           try {
-            const answer = await askOnce(sessionId.value, text)
+            const answer = await askOnce(sessionId.value, text, model.value)
             replace(pendingId, { content: answer })
             await refreshUsage()
             return
@@ -313,9 +330,26 @@ export const useChatStore = defineStore('chat', () => {
     if (question) await ask(question.content)
   }
 
-  /** 清空对话 = 开一个新会话（历史留在后端，按保留期过期） */
-  function toggle(open?: boolean): void {
-    collapsed.value = open ?? !collapsed.value
+  /* —— 面板展开 / 收起 —— */
+
+  /** 展开对话面板 */
+  function expand(): void {
+    collapsed.value = false
+  }
+
+  /**
+   * 收起对话面板。
+   * 顺带关掉「历史会话」浮层，下次再点开就直接看到对话本身。
+   */
+  function collapse(): void {
+    collapsed.value = true
+    historyOpen.value = false
+  }
+
+  /** 悬浮球点击：在展开与收起之间切换 */
+  function toggleCollapsed(): void {
+    if (collapsed.value) expand()
+    else collapse()
   }
 
   return {
@@ -335,6 +369,8 @@ export const useChatStore = defineStore('chat', () => {
     collapsed,
     historyOpen,
     contextLabel,
+    model,
+    modelLabel,
     usedToday,
     canSend,
     contextMessages,
@@ -350,6 +386,9 @@ export const useChatStore = defineStore('chat', () => {
     removeSession,
     setSessionFilter,
     toggleHistory,
-    toggle,
+    setModel,
+    expand,
+    collapse,
+    toggleCollapsed,
   }
 })

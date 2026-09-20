@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { ASSISTANT_MODELS } from '@/config/models'
 import { chatQuickQuestions } from '@/mock/data'
 import { useChatStore } from '@/stores/chat'
 import { getAssistantSpot, setAssistantSpot } from '@/utils/storage'
@@ -36,12 +37,11 @@ const EDGE = 18
 
 const viewport = ref({ w: window.innerWidth, h: window.innerHeight })
 
-/** 默认停在右下角；岗位选择页底部有固定操作条，稍微上移避让 */
+/** 默认停在右下角 */
 function defaultSpot(): Spot {
-  const lift = route.name === 'positions' ? 84 : 0
   return {
     x: viewport.value.w - FAB_SIZE - EDGE,
-    y: viewport.value.h - FAB_SIZE - EDGE - lift,
+    y: viewport.value.h - FAB_SIZE - EDGE,
   }
 }
 
@@ -121,7 +121,7 @@ function onFabClick(): void {
     dragged = false
     return
   }
-  chat.toggle()
+  chat.toggleCollapsed()
 }
 
 function onViewportResize(): void {
@@ -272,7 +272,7 @@ onBeforeUnmount(() => {
             class="assistant__icon-btn"
             type="button"
             title="收起"
-            @click="chat.toggle(false)"
+            @click="chat.collapse()"
           >
             收起
           </button>
@@ -380,7 +380,7 @@ onBeforeUnmount(() => {
 
         <p v-if="chat.sending" class="typing">
           <span class="typing__dots" aria-hidden="true"><i /><i /><i /></span>
-          对方正在输入…
+          {{ chat.modelLabel }} 正在输入…
         </p>
       </div>
 
@@ -397,6 +397,27 @@ onBeforeUnmount(() => {
       </div>
 
       <footer v-if="!chat.historyOpen" class="assistant__composer">
+        <!-- 模型选择：后端暂未按模型分流，选项见 config/models.ts -->
+        <div class="assistant__model">
+          <span class="assistant__model-label">模型</span>
+          <el-select
+            class="assistant__model-select"
+            size="small"
+            :model-value="chat.model"
+            :disabled="chat.sending"
+            @change="chat.setModel"
+          >
+            <el-option
+              v-for="item in ASSISTANT_MODELS"
+              :key="item.id"
+              :label="item.label"
+              :value="item.id"
+            >
+              <span>{{ item.label }}</span>
+              <span class="model-desc">{{ item.desc }}</span>
+            </el-option>
+          </el-select>
+        </div>
         <textarea
           v-model="draft"
           class="assistant__input"
@@ -935,6 +956,31 @@ onBeforeUnmount(() => {
   padding: 10px 16px 14px;
   border-top: 1px solid var(--line-soft);
   background: var(--surface);
+}
+
+/* —— 模型选择 —— */
+.assistant__model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.assistant__model-label {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+.assistant__model-select {
+  width: 148px;
+}
+
+/* 下拉项右侧的补充说明 */
+.model-desc {
+  float: right;
+  margin-left: 12px;
+  color: var(--ink-3);
+  font-size: 11.5px;
 }
 
 .assistant__input {

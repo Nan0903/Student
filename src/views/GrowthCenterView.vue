@@ -30,7 +30,7 @@ const LEVEL_BY_TIER: Record<'basic' | 'advanced' | 'extended', string> = {
 }
 
 const loading = computed(() => positionStore.loading || skillStore.loading || projectStore.loading)
-/** 我的岗位：只展示推荐度最高的三个 */
+/** 我的推荐岗位：只展示推荐度最高的三个 */
 const topPositions = computed(() => positionStore.rankedPositions.slice(0, 3))
 const currentPosition = computed(() => positionStore.currentPosition)
 
@@ -108,7 +108,7 @@ function goSkill(node: SkillNode): void {
 }
 
 onMounted(async () => {
-  chat.contextLabel = '成长中心 · 我的岗位与实训进度'
+  chat.contextLabel = '成长中心 · 我的推荐岗位与实训进度'
   await Promise.all([positionStore.load(), skillStore.load(), projectStore.load()])
   try {
     jobProgress.value = await fetchJobProjectProgress()
@@ -131,17 +131,12 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 我的岗位 -->
+    <!-- 我的推荐岗位 -->
     <section class="panel block">
       <header class="panel-head">
         <div class="panel-head__title">
           <span class="panel-title-mark" />
-          我的岗位
-        </div>
-        <div class="panel-head__extra">
-          <el-button text type="primary" @click="router.push('/positions')">
-            查看全部岗位 →
-          </el-button>
+          我的推荐岗位
         </div>
       </header>
       <div class="panel-body">

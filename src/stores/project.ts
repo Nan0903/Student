@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  addToMyProjects,
   fetchProject,
   fetchProjects,
   loadWork as loadWorkApi,
@@ -8,6 +9,7 @@ import {
   runAiReview,
   saveAnswers,
   saveStageAnswer,
+  removeFromMyProjects,
   startWork as startWorkApi,
   submitWork as submitWorkApi,
   withdrawSubmission,
@@ -137,8 +139,18 @@ export const useProjectStore = defineStore('project', () => {
     const cached = getProject(projectId)
     if (cached && cached.modules.length > 0) return cached
     const project = await fetchProject(projectId)
-    if (project) projects.value = [...projects.value.filter((item) => item.id !== project.id), project]
-    return project
+    if (!project) return null
+    // 详情接口走的是教师侧项目主数据，不含岗位名与「我的实训」标记，
+    // 用列表里那份补上，避免进过详情页后卡片上的岗位、必修标记丢失
+    const merged: Project = {
+      ...project,
+      positionName: project.positionName ?? cached?.positionName,
+      picked: cached?.picked ?? project.picked,
+      isRequired: cached?.isRequired ?? project.isRequired,
+      requiredDeadlineAt: cached?.requiredDeadlineAt ?? project.requiredDeadlineAt,
+    }
+    projects.value = [...projects.value.filter((item) => item.id !== merged.id), merged]
+    return merged
   }
 
   /** 读取某个项目的闯关上下文；force=true 时绕过缓存重新拉 */
@@ -180,6 +192,29 @@ export const useProjectStore = defineStore('project', () => {
       syncProject(projectId, work)
     }
     return work
+  }
+
+  /* —— 「我的实训」的加入 / 移出（学生从技能树挑项目） —— */
+
+  function markPicked(projectId: string, value: boolean): void {
+    projects.value = projects.value.map((item) =>
+      item.id === projectId ? { ...item, picked: value } : item,
+    )
+  }
+
+  /** 加进「我的实训」：后端幂等，这里同步本地列表，关卡地图立刻能看到 */
+  async function pickProject(projectId: string): Promise<void> {
+    await addToMyProjects([projectId])
+    markPicked(projectId, true)
+  }
+
+  /**
+   * 从「我的实训」移出：幂等，闯关记录不受影响。
+   * 如果它同时是老师点名的必修，列表里仍会保留（必修是任务实时算的）。
+   */
+  async function unpickProject(projectId: string): Promise<void> {
+    await removeFromMyProjects(projectId)
+    markPicked(projectId, false)
   }
 
   /* —— 草稿（本机） —— */
@@ -400,6 +435,8 @@ export const useProjectStore = defineStore('project', () => {
     loadProject,
     loadWork,
     startWork,
+    pickProject,
+    unpickProject,
     getDraft,
     saveDraft,
     clearDraft,
