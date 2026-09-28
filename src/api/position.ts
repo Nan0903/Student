@@ -31,7 +31,6 @@ interface BackendJobRecommendation {
   recommended_level: string | null
   scene: string | null
   description: string | null
-  heat: number
   match_score: number
   skill_total_count: number
   skill_done_count: number
@@ -70,7 +69,6 @@ export async function fetchPositions(): Promise<Position[]> {
       direction: job.direction_tag ?? '其他方向',
       difficulty: DIFFICULTY_BY_LEVEL[job.recommended_level ?? 'BASIC'] ?? '中等',
       description: job.description ?? job.scene ?? '',
-      heat: job.heat,
       // 后端没有「已选人数」聚合接口，先按 0 展示
       selectedCount: 0,
       skillIds: job.skill_groups.flatMap((group) =>

@@ -49,8 +49,6 @@ export interface Position {
   direction: string
   difficulty: PositionDifficulty
   description: string
-  /** 热度 */
-  heat: number
   /** 已选人数 / 通过人数 */
   selectedCount: number
   /**
