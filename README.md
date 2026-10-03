@@ -6,7 +6,8 @@
 
 数据来自同仓库的后端 `training_platform`（FastAPI），前端不再依赖本地假数据：
 岗位推荐、技能树进度、实训项目、闯关作答、AI 评审、AI 问答与历史记录都走真实接口；
-只有**认证中心**（后端暂无证书接口）和 AI 助教的**快捷提问文案**仍是本地 mock。
+认证中心也已接后端（证书规则 / 申请 / 面试 / 审核 / 发证）；
+只有 AI 助教的**快捷提问文案**仍是本地固定文案。
 
 ## 技术栈
 
@@ -84,6 +85,9 @@ npm run preview     # 本地预览 dist/ 的构建结果
 | 关卡附件 | `POST /file-assets/upload`、`GET/POST/DELETE /attempts/{aid}/stages/{sid}/files[/{asset_id}]` |
 | 文件下载 | `GET /file-assets/{id}/download`（文件流，不包统一响应体） |
 | 实训项目进度（三档，`scope` 切分母：全部 / 我自主选择的 / 老师下发的） | `GET /students/{id}/project-progress` |
+| 认证中心：证书与所需技能点进度 | `GET /students/{id}/certifications` |
+| 认证中心：申请 / AI 面试（占位） | `POST /students/{id}/cert-applications`、`POST /students/{id}/cert-applications/{id}/interview` |
+| 认证中心：已获得证书 | `GET /students/{id}/certificates` |
 | AI 助教（会话 + SSE 流式提问 + 用量） | `GET/POST /qa/sessions`、`GET /qa/sessions/{id}`、`POST /qa/sessions/{id}/ask`、`GET /qa/usage` |
 | 枚举字典（状态 code → 中文文案） | `GET /enums` |
 
@@ -97,8 +101,8 @@ npm run preview     # 本地预览 dist/ 的构建结果
 
 ### 还没接的（后端暂无接口）
 
-- **认证中心**：`student_certificate` 表是空的，也没有证书路由 → 页面仍用本地 mock 数据
 - **顶栏「消息 / 待办」角标**：`notification` 表空且无接口 → 角标是写死的
+- 证书的电子文件（PDF 样式）暂未提供，认证中心只展示证书信息，不做下载
 
 ### 数据口径（前端不要自己另算一套）
 
@@ -106,7 +110,7 @@ npm run preview     # 本地预览 dist/ 的构建结果
 
 | 指标 | 口径 | 来源 |
 | --- | --- | --- |
-| 技能点进度 | 该技能点关联的**已发布项目**完成度均值（0~100） | `GET /students/{id}/skill-tree-progress` 的 `progress` |
+| 技能点进度 | 该技能点关联的**关卡**里，达标关卡数 ÷ 关联关卡数（0~100）；达标 = 关卡得分率（得分 ÷ 权重）≥ 该层级及格线，点亮后只进不退 | `GET /students/{id}/skill-tree-progress` 的 `progress` |
 | 体系进度 / 整体进度 | 该体系（或全部）技能点进度的**均值** | 同上：`trees[].percent`、`overall_percent` |
 | 岗位匹配度 | 该岗位关联技能点进度的**均值**，后端已排序 | `GET /students/{id}/job-recommendations` 的 `match_score` |
 | 关卡进度 | 项目已启用关卡数 vs 最新一轮闯关已填写的关卡数（重新挑战从 0 重新计，最高分保留） | 项目列表的 `level_total` / `level_done` |
@@ -140,7 +144,7 @@ Student/
 │  │  ├─ history.ts              # 历史记录：跨项目提交记录与每次提交的评审明细
 │  │  ├─ file.ts                 # 文件上传（带进度）、下载地址、关卡附件挂/摘
 │  │  ├─ qa.ts                   # AI 助教：会话、SSE 流式提问、用量统计
-│  │  ├─ certification.ts        # 认证中心（后端暂无接口，走本地 mock）
+│  │  ├─ certification.ts        # 认证中心：证书概览 / 申请 / 面试 / 已获证书（真实后端）
 │  │  └─ chat.ts                 # 旧版 AI 助教 mock（已停用，保留作参考）
 │  │
 │  ├─ assets/
@@ -172,9 +176,9 @@ Student/
 │  │  └─ DefaultLayout.vue       # 登录后外壳：顶栏 + 可收起的左侧导航 + 内容区 + 悬浮 AI 助教
 │  │
 │  ├─ mock/
-│  │  └─ data.ts                 # 还在被引用的只有三处：认证中心证书（api/certification.ts）、
-│  │                             # AI 助教的快捷提问 / 旧版回复模板（components/AiAssistantDock.vue、api/chat.ts）；
-│  │                             # 文件里的岗位 / 技能树 / 项目示例数据已无人引用，保留作参考
+│  │  └─ data.ts                 # 还在被引用的只剩 AI 助教的快捷提问 / 旧版回复模板
+│  │                             # （components/AiAssistantDock.vue、api/chat.ts）；
+│  │                             # 文件里的岗位 / 技能树 / 项目 / 认证示例数据已无人引用，保留作参考
 │  │
 │  ├─ router/
 │  │  └─ index.ts                # 路由表、登录守卫、meta.nav（导航高亮）、路由预取
@@ -191,7 +195,7 @@ Student/
 │  │  └─ index.ts                # 全局类型定义（数据契约）
 │  │
 │  ├─ utils/
-│  │  ├─ request.ts              # 旧版 Mock 请求层（仅认证中心还在用 mockRequest）
+│  │  ├─ request.ts              # 旧版 Mock 请求层（认证中心已切到 http.ts，现仅存历史用途）
 │  │  ├─ storage.ts              # localStorage 封装：Token、学生档案、关卡草稿、UI 偏好
 │  │  ├─ answer.ts               # 关卡多题作答的拼装与还原（后端只有一个 answer_text 字段）
 │  │  └─ format.ts               # 格式化与展示映射：数字、日期、文件体积、状态文案与配色
@@ -229,7 +233,7 @@ Student/
 | `/map` | 关卡地图 | 只显示「我的实训」项目（技能选项里点「+」加入 ∪ 老师下发），按层级分组、按来源筛选（全部岗位 / 自主选择 / 下发任务）；自己加的项目可在卡片上直接「移出」，一条都没有时引导去技能选项 |
 | `/map/project/:projectId` | 关卡详情 | 主导航高亮仍停留在「关卡地图」 |
 | `/map/history` | 历史记录 | 从关卡地图顶部工具条进入（无独立导航项），主导航高亮仍是「关卡地图」 |
-| `/certification` | 认证中心 | 认证条件、证书状态、鉴定书预览（数据仍为 mock） |
+| `/certification` | 认证中心 | 所选职业的证书与所需技能点进度、申请 / AI 面试（占位）/ 待人工审核 / 已通过 / 已驳回状态、已获得证书（真实后端） |
 | `/:pathMatch(.*)*` | 404 | 兜底页 |
 
 除 `/login` 与 404 外，其余路由都需要登录态，未登录会自动跳转到身份入口页。
@@ -267,7 +271,7 @@ API（api/*.ts）             ← 接口签名与后端字段映射（snake_case
 | 调整 AI 助教可选的模型 | 前端 `config/models.ts` 的 id + 后端 `system_config.ai.llm.models.<id>`（两边 id 必须一致，缺 key 会在回答时报"XX 还没配置 api key"） |
 | 调整关卡地图上能出现哪些项目 | 学生自己在技能树节点详情点「+」加入；过滤逻辑在 `views/LevelMapView.vue` 的 `mapProjects` |
 | 调整关卡地图顶部的来源筛选 | `views/LevelMapView.vue` 的 `sourceOptions`（全部岗位 / 自主选择 / 下发任务，对应 `picked` / `isRequired` 两个标记） |
-| 认证中心接真实后端 | `api/certification.ts` 把 `mockRequest` 换成 `http.ts` 的 `get`，页面（`CertificationView.vue`）不用改；它已经有 `loading` 骨架，接完不会闪空态 |
+| 调整认证中心的文案与按钮 | `views/CertificationView.vue`；接口封装在 `api/certification.ts`（`/students/{id}/certifications`、`/certificates`、`cert-applications`） |
 | 换 AI 助教回答下面显示的模型名 | 后端 SSE 首帧 `meta.model`（`stores/chat.ts` 的 `onModel` 写进消息的 `model` 字段），历史消息读 `ai_qa_message.model_name` |
 | 调整技能树的两种体系模式 | `views/SkillTreeView.vue`：顶部 `mode`（skill / job）切换，岗位体系的分组在 `jobProjectGroups` |
 | 改浏览器标签标题 | `router/index.ts` 的 `meta.title`，标签统一拼成「{title} · 岗位闯关式实训平台」 |
@@ -298,7 +302,8 @@ API（api/*.ts）             ← 接口签名与后端字段映射（snake_case
 - **技能树有两条挑项目的路径**：技能体系按技能点（技能点详情 → 关联项目），岗位体系按岗位（岗位清单 → 岗位详情 → 该岗位承载的项目），两边的项目行都用 `components/ProjectPickRow.vue`，所以「+ / 已加入」状态与关卡地图完全同源。技能体系那张 G6 图在切到岗位体系时会销毁、切回时重建。
 - **前端不再依赖后端的编码列**：后端已删掉 `skill_tree.tree_code` / `skill_node.node_code` / `project_stage_template.stage_key`（唯一约束落到名称上），所以体系 id 改用 `tree-<id>`、体系颜色按返回顺序取、关卡简介按「关卡名称」去模块库里关联。
 - **岗位选择页已下线**：导航入口、`/positions` 路由与页面文件都已删除，成长中心只保留「我的推荐岗位」卡片（去掉了「查看全部岗位」入口）。后端 `/students/{id}/jobs`（选目标岗位）接口保留未动，前端 `api/position.ts` 里的 `selectPosition` 目前没有页面调用。
-- **认证中心**与顶栏的消息/待办角标仍是本地 mock —— 后端还没有证书与通知接口。
+- **认证中心**已接真实后端：证书由「岗位 ↔ 证书 ↔ 所需技能点」配置，技能点全部点亮后才可申请，
+  经 AI 面试（本期占位）与教师人工审核后发放；顶栏的消息/待办角标仍是本地 mock（后端暂无通知接口）。
 - 技能鉴定书为静态预览样式，暂不支持生成与下载。
 
 ## 提交前自查
@@ -327,4 +332,5 @@ npm run build           # 类型检查 + 生产构建（合并/发版前跑）
 
 **AI 助教提示「XX 还没配置 api key」** —— 不是前端问题：让后端在 `system_config` 的 `ai.llm.models.<id>` 里补 `api_key`（或 `scripts/set_llm_config.py --model-key kimi --api-key-env …`）。前端只需保证 `config/models.ts` 的 id 与后端那家的键一致。
 
-**认证中心的证书是假的** —— 后端还没有证书接口（`student_certificate` 表为空），页面在用 `mock/data.ts` 的数据，接后端时只改 `api/certification.ts` 一处。
+**认证中心看不到证书** —— 先确认「技能点是否已全部点亮」：证书只有在它要求的技能点全部点亮后才出现「申请证书」按钮；
+另外证书要由后端配置好（岗位对应一张证书规则），没有配规则的岗位不会出现在认证中心。

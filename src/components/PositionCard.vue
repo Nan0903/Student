@@ -63,10 +63,6 @@ function onClick(): void {
 
     <div class="position-card__stats">
       <span class="stat">
-        <span class="num">{{ position.heat }}</span>
-        <span class="stat__label">热度</span>
-      </span>
-      <span class="stat">
         <span class="num">{{ position.skillDone }}/{{ position.skillTotal }}</span>
         <span class="stat__label">技能点已完成</span>
       </span>
